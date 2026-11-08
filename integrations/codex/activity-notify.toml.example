@@ -1,0 +1,4 @@
+# Optional true turn-completion callback, separate from Stop lifecycle hooks.
+# Merge deliberately: Codex has one notify command. Preserve an existing notifier
+# by using an explicitly reviewed dispatcher; never replace it silently.
+notify = ["/absolute/path/to/Spleen.app/Contents/MacOS/Spleen", "--activity-notification", "codex", "--data-dir", "/absolute/path/to/spleen-data"]

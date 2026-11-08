@@ -1,0 +1,11 @@
+.build/
+build/
+dist/
+.local-state/
+.DS_Store
+
+.env.local
+
+# Local verification logs, probes and previews; contain personal session data
+evidence/
+.swiftpm/

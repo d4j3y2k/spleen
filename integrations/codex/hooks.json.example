@@ -1,0 +1,23 @@
+{
+  "description": "Optional local Spleen lifecycle metadata; review before enabling.",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{
+      "type": "command",
+      "command": "\"/Applications/Spleen.app/Contents/MacOS/Spleen\" --context-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+      "async": true,
+      "timeout": 5
+    }] }],
+    "UserPromptSubmit": [{ "hooks": [{
+      "type": "command",
+      "command": "\"/Applications/Spleen.app/Contents/MacOS/Spleen\" --context-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+      "async": true,
+      "timeout": 5
+    }] }],
+    "Stop": [{ "hooks": [{
+      "type": "command",
+      "command": "\"/Applications/Spleen.app/Contents/MacOS/Spleen\" --context-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+      "async": true,
+      "timeout": 5
+    }] }]
+  }
+}

@@ -1,0 +1,2171 @@
+{
+  "cases" : [
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0002",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 1,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "missing"
+          },
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0008",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "refused"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0000",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "malformed"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0004",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "none"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0000",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "tie"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "unchanged"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0000",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.7,
+          "validationDelay" : 0.06
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.75,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 0.75,
+          "closeAt" : 0.85,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 120.2,
+          "closeAt" : 120.3,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 0.1,
+          "closeAt" : 0.4,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        },
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0003",
+            "provider" : "codex"
+          }
+        },
+        {
+          "at" : 2,
+          "closeAt" : 2.1
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "kind" : "missing"
+          },
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_absent",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.5,
+          "validationDelay" : 0
+        },
+        {
+          "at" : 0.1,
+          "evidence" : {
+            "anchorDate" : "2033-05-18T03:33:20Z",
+            "catalog" : {
+              "entries" : [
+
+              ],
+              "folders" : [
+
+              ],
+              "hiddenIDs" : [
+
+              ],
+              "truncated" : false,
+              "version" : 1
+            },
+            "contextEvents" : [
+
+            ],
+            "notes" : [
+
+            ],
+            "state" : {
+              "destinations" : [
+                {
+                  "id" : "00000000-0000-0000-0000-000000000001",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0000",
+                  "title" : "Synthetic revised task"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000002",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0001",
+                  "title" : "Synthetic task 1"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000003",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0002",
+                  "title" : "Synthetic task 2"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000004",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0003",
+                  "title" : "Synthetic task 3"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000005",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0004",
+                  "title" : "Synthetic task 4"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000006",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0005",
+                  "title" : "Synthetic task 5"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000007",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0006",
+                  "title" : "Synthetic task 6"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000008",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0007",
+                  "title" : "Synthetic task 7"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000009",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0008",
+                  "title" : "Synthetic task 8"
+                },
+                {
+                  "id" : "00000000-0000-0000-0000-000000000010",
+                  "pinned" : false,
+                  "provider" : "codex",
+                  "threadID" : "thr_replay_0009",
+                  "title" : "Synthetic task 9"
+                }
+              ],
+              "rememberRecents" : true,
+              "shortcut" : {
+                "command" : false,
+                "control" : true,
+                "key" : "Space",
+                "option" : true,
+                "shift" : false
+              },
+              "version" : 1
+            }
+          },
+          "response" : {
+            "choiceIndex" : 2,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 0.6,
+          "closeAt" : 0.7,
+          "target" : {
+            "id" : "thr_replay_0002",
+            "provider" : "codex"
+          }
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        {
+          "at" : 0,
+          "response" : {
+            "choiceIndex" : 3,
+            "kind" : "choice"
+          },
+          "responseAfter" : 0.2,
+          "validationDelay" : 0
+        }
+      ],
+      "evidence" : {
+        "anchorDate" : "2033-05-18T03:33:20Z",
+        "catalog" : {
+          "entries" : [
+
+          ],
+          "folders" : [
+
+          ],
+          "hiddenIDs" : [
+
+          ],
+          "truncated" : false,
+          "version" : 1
+        },
+        "contextEvents" : [
+
+        ],
+        "notes" : [
+
+        ],
+        "state" : {
+          "destinations" : [
+            {
+              "id" : "00000000-0000-0000-0000-000000000001",
+              "pinned" : true,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0000",
+              "title" : "Synthetic task 0"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000002",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0001",
+              "title" : "Synthetic task 1"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000003",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0002",
+              "title" : "Synthetic task 2"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000004",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0003",
+              "title" : "Synthetic task 3"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000005",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0004",
+              "title" : "Synthetic task 4"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000006",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0005",
+              "title" : "Synthetic task 5"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000007",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0006",
+              "title" : "Synthetic task 6"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000008",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0007",
+              "title" : "Synthetic task 7"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000009",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0008",
+              "title" : "Synthetic task 8"
+            },
+            {
+              "id" : "00000000-0000-0000-0000-000000000010",
+              "pinned" : false,
+              "provider" : "codex",
+              "threadID" : "thr_replay_0009",
+              "title" : "Synthetic task 9"
+            }
+          ],
+          "rememberRecents" : true,
+          "shortcut" : {
+            "command" : false,
+            "control" : true,
+            "key" : "Space",
+            "option" : true,
+            "shift" : false
+          },
+          "version" : 1
+        }
+      },
+      "opens" : [
+        {
+          "at" : 1,
+          "closeAt" : 1.1,
+          "target" : {
+            "id" : "thr_replay_0000",
+            "provider" : "codex"
+          }
+        }
+      ]
+    }
+  ],
+  "evidenceKind" : "synthetic",
+  "version" : 1
+}

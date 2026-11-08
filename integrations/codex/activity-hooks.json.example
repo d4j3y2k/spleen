@@ -1,0 +1,137 @@
+{
+  "description": "Spleen local lifecycle observations. Metadata only; no approval decisions or model context. Review and trust normally.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PreModelRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PostModelRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/absolute/path/to/Spleen.app/Contents/MacOS/Spleen\" --activity-event codex --data-dir \"/absolute/path/to/spleen-data\"",
+            "timeout": 1
+          }
+        ]
+      }
+    ]
+  }
+}
