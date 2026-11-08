@@ -18,11 +18,13 @@ struct AutomaticAttentionConsent: Codable {
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
+    /// Ledgers are named by scope, not by consent, so pausing and turning assessment back on
+    /// (a new consent ID) continues today's count instead of starting a fresh allowance.
     func transport(in directory: URL) throws -> DecisionsTransport {
         guard enabled, scope == Self.scopeName, credentialPath.hasPrefix("/") else { throw DecisionsTrialError.invalidConfiguration }
         let credential = try attentionCredential(at: URL(fileURLWithPath: credentialPath))
         return try DailyDecisionsTransport(credential: credential, directory: Self.ledgerDirectory(directory),
-                                           consentID: id, dailyLimit: dailyLimit, requestTimeout: 5)
+                                           consentID: Self.scopeName, dailyLimit: dailyLimit, requestTimeout: 5)
     }
     static func load(from directory: URL) throws -> AutomaticAttentionConsent? {
         let url = location(directory)

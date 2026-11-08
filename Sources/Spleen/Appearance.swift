@@ -7,8 +7,6 @@ enum SpleenStyle {
     static let accent = adaptive(light: 0xA43F59, dark: 0xE7A0AE)
     static let blush = adaptive(light: 0xDB8798, dark: 0xB75C74)
     static let claude = adaptive(light: 0xA55C3D, dark: 0xDCA081)
-    static let working = adaptive(light: 0x146341, dark: 0x8CE6B6)
-    static let workingSurface = adaptive(light: 0xE1F6EA, dark: 0x183E2E)
     static let surface = adaptive(light: 0xFFFAFB, dark: 0x352D31)
     static let line = Color.primary.opacity(0.09)
     /// Hard-candy selections keep their provider color through the body, glow,
@@ -379,8 +377,7 @@ struct ProviderMark: View {
     var candy = false
     private var hue: Color { provider == .claude ? SpleenStyle.claude : SpleenStyle.accent }
     var body: some View {
-        Image(systemName: provider == .claude ? "sun.max" : "chevron.left.forwardslash.chevron.right")
-            .font(.system(size: size * 0.48, weight: .medium))
+        ProviderGlyph(provider: provider, size: size * 0.60)
             .foregroundStyle(candy ? Color.primary.opacity(0.9) : hue)
             .frame(width: size, height: size)
             .background(candy ? Color.white.opacity(0.26) : hue.opacity(0.14),
@@ -394,16 +391,12 @@ struct ProviderMark: View {
 struct ConversationButtonStyle: ButtonStyle {
     var selected: Bool
     var provider: ContextProvider
-    var working = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .candyText(selected, palette: SpleenStyle.candy(for: provider))
-            // Keep the status stripe inside the glass content. An overlay on
-            // the styled button can end up below Liquid Glass's compositor layer.
-            .workingAccent(working)
             .spleenSurface(.card, selected: selected, hovered: hovered,
                            tint: provider == .claude ? SpleenStyle.claude : nil,
                            candy: SpleenStyle.candy(for: provider))
@@ -436,11 +429,20 @@ struct QuietIconButton: View {
 
 struct SettingsSection<Content: View>: View {
     let title: String
-    let symbol: String
+    var symbol: String? = nil
+    var provider: ContextProvider? = nil
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(title, systemImage: symbol)
+            Label {
+                Text(title)
+            } icon: {
+                if let provider {
+                    ProviderGlyph(provider: provider, size: 13)
+                } else if let symbol {
+                    Image(systemName: symbol)
+                }
+            }
                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(SpleenStyle.accent)
             content
         }

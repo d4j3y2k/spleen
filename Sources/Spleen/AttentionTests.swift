@@ -103,6 +103,14 @@ func runAttentionTests() -> (passed: Int, failures: [String]) {
         settle { openModel.indexing }
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         check(openMock.bodies.isEmpty, "assessment on open sends nothing at launch")
+        let launchController = PanelController(model: openModel)
+        launchController.currentPID = { nil }
+        launchController.restorePID = { _ in }
+        launchController.present(orderFront: false, assessOnOpen: false)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check(openMock.bodies.isEmpty && launchController.session.isPresented,
+              "the startup panel with restored consent presents without assessment")
+        launchController.dismiss(.focusLoss)
         openModel.prepare()
         settle { openMock.bodies.isEmpty }
         check(openMock.bodies.count == 1 && openModel.compassItems.contains(first), "a press sends the changed Codex card on screen")
@@ -112,6 +120,40 @@ func runAttentionTests() -> (passed: Int, failures: [String]) {
         openModel.endPresentation(); openModel.prepare()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         check(openMock.bodies.count == 1, "a later press doesn't resend unchanged text")
+        // HTTP failures are visible: transient replies back off and keep the card; rejected ones pause.
+        let errorDirectory = directory.appendingPathComponent("on-open-errors", isDirectory: true)
+        let errorRepository = StateRepository(url: errorDirectory.appendingPathComponent("destinations.json")); try errorRepository.save(state)
+        try catalog.save(to: errorDirectory.appendingPathComponent("catalog.json"))
+        try notes.save(to: errorDirectory.appendingPathComponent("relevance.json"))
+        let errorMock = AttentionTestTransport()
+        var uptimeOffset = 0.0
+        let errorModel = AppModel(repository: errorRepository, catalogFetcher: { _ in (catalog.entries, false) }, insightFetcher: { _, _ in [] },
+                                  assessmentTransport: errorMock, automaticConsent: automatic,
+                                  uptime: { ProcessInfo.processInfo.systemUptime + uptimeOffset })
+        settle { errorModel.indexing }
+        errorModel.prepare()
+        settle { errorMock.bodies.isEmpty }
+        check(errorMock.bodies.count == 1, "error fixture sends the changed card once")
+        errorMock.completion?(.failure(DecisionsHTTPStatusError(statusCode: 503)))
+        settle { !errorModel.automaticAssessmentStatus.contains("503") }
+        check(errorModel.automaticAssessmentEnabled && errorModel.automaticAssessmentStatus.contains("HTTP 503"),
+              "a transient reply stays on and names the status")
+        errorModel.endPresentation(); errorModel.prepare()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        check(errorMock.bodies.count == 1, "a transient failure waits before spending another reservation")
+        errorModel.endPresentation(); uptimeOffset += 61; errorModel.prepare()
+        settle { errorMock.bodies.count < 2 }
+        check(errorMock.bodies.count == 2, "after the backoff the same card is sent again")
+        errorMock.completion?(.failure(DecisionsHTTPStatusError(statusCode: 401)))
+        settle { errorModel.automaticAssessmentEnabled }
+        check(!errorModel.automaticAssessmentEnabled && errorModel.automaticAssessmentStatus.contains("HTTP 401"),
+              "a rejected key pauses assessment with a visible status")
+        check((try AutomaticAttentionConsent.load(from: errorDirectory)) == nil, "the pause after a rejected key is persisted")
+        errorModel.endPresentation()
+        let failedModel = AppModel(repository: errorRepository, catalogFetcher: { _ in (catalog.entries, false) }, insightFetcher: { _, _ in [] },
+                                   automaticSetupFailure: "Paused: fixture key unreadable.")
+        check(!failedModel.automaticAssessmentEnabled && failedModel.automaticAssessmentStatus.hasPrefix("Paused"),
+              "a launch setup failure is visible in settings instead of Off")
         let claudeObservation = ClaudeDesktopObservation(url: "claude.ai/epitaxy/local_11111111-1111-4111-8111-111111111111", title: "Claude fixture - Claude Code")!
         let claude = Destination(title: claudeObservation.title, threadID: claudeObservation.key.id, provider: .claude)
         let claudeFixed = model.compassItems

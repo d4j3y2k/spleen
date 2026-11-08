@@ -18,6 +18,11 @@ func runAppTests() -> Bool {
         count += 1
         if !condition() { failures.append(label); print("FAIL: \(label)") }
     }
+    check(installedCodexCatalogClient(applicationURL: URL(fileURLWithPath: "/fixture/Applications/My Codex.app"))
+        .executable.path == "/fixture/Applications/My Codex.app/Contents/Resources/codex-cli/bin/codex",
+          "catalog helper follows a renamed or relocated Desktop installation")
+    check(installedCodexCatalogClient(applicationURL: nil).executable == CodexCatalogClient().executable,
+          "missing Desktop registration keeps the conventional install fallback")
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-app-test-\(UUID())")
     defer { try? FileManager.default.removeItem(at: temporary) }
     let model = AppModel(repository: StateRepository(url: temporary.appendingPathComponent("state.json")),

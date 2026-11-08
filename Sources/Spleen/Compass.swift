@@ -169,7 +169,7 @@ struct CompassView: View {
             HStack(alignment: .top, spacing: 10) {
                 ProviderMark(provider: item.provider, size: 24, candy: selected).padding(.top, 1)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title).font(.system(size: 12.5, weight: .medium))
+                    Text(item.title).font(.system(size: 12.5, weight: live?.activity == .working ? .semibold : .medium))
                         .lineLimit(2).multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,7 +191,6 @@ struct CompassView: View {
         .buttonStyle(.plain)
         .candyText(selected, palette: SpleenStyle.candy(for: item.provider))
         .background(SpleenRowHighlight(selected: selected, palette: SpleenStyle.candy(for: item.provider)))
-        .workingAccent(live?.activity == .working, compact: true)
         .focused($keyboardFocus, equals: .recent(item.id))
         .accessibilityLabel([item.title, item.provider.displayName, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(selected ? "Selected" : "")
@@ -240,11 +239,11 @@ struct CompassView: View {
                     KeyCap(text: hint.isEmpty ? "↵" : hint, candy: selected).opacity(hint.isEmpty ? 0 : 1)
                 }
                 Text(item.title)
-                    .font(.system(size: center ? 15 : 13.5, weight: .semibold))
+                    .font(.system(size: center ? 15 : 13.5, weight: live?.activity == .working ? .bold : .semibold))
                     .lineLimit(2).multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
-                    if live?.activity == .working { WorkingBadge() }
+                    if live?.activity == .working { WorkingStatus() }
                     Text(model.primaryTimingLabel(item) ?? project ?? "Saved conversation")
                         .font(.system(size: 10.5)).foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
                         .lineLimit(1)
@@ -256,7 +255,7 @@ struct CompassView: View {
             .frame(width: size.width, height: size.height)
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(ConversationButtonStyle(selected: selected, provider: item.provider, working: live?.activity == .working))
+        .buttonStyle(ConversationButtonStyle(selected: selected, provider: item.provider))
         .focused($keyboardFocus, equals: .choice(item.id))
         .accessibilityLabel([item.title, item.provider.displayName, project, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(selected ? "Selected" : "")

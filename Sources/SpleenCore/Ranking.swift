@@ -275,6 +275,15 @@ public struct RankingInput: Equatable {
 
 public enum RankingError: Error { case invalidResponse, budgetExhausted, httpError }
 
+/// A non-2xx reply. The body is discarded; only the status code is reported, so a caller
+/// can tell a rejected credential from a transient outage without retrying blindly.
+public struct DecisionsHTTPStatusError: Error, Equatable {
+    public let statusCode: Int
+    public init(statusCode: Int) { self.statusCode = statusCode }
+    /// The same request could succeed later; nothing about the setup is known to be wrong.
+    public var isTransient: Bool { statusCode == 408 || statusCode == 429 || (500...599).contains(statusCode) }
+}
+
 public struct RankingMetrics {
     public var calls = 0, valid = 0, failed = 0, late = 0, superseded = 0, fallback = 0, ready = 0
     public var lastReadyMilliseconds: Double?
@@ -343,7 +352,8 @@ public struct RankingPipeline {
     }
 }
 
-/// No default credential discovery. Production app never constructs this transport.
+/// No default credential discovery. The app constructs an HTTP transport only for
+/// an explicitly authorized assessment; next-chat ranking has no transport.
 /// A future approved trial must explicitly supply a credential and bounded pipeline.
 public protocol DecisionsTransport {
     @discardableResult func send(body: Data, completion: @escaping (Result<Data, Error>) -> Void) -> (() -> Void)
@@ -381,9 +391,11 @@ public final class DecisionsHTTPTransport: DecisionsTransport {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             let task = session.dataTask(with: request) { data, response, error in
                 if let error { gate.complete(.failure(error)); return }
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let data, data.count <= 100_000 else {
-                    gate.complete(.failure(RankingError.httpError)); return
+                guard let http = response as? HTTPURLResponse else { gate.complete(.failure(RankingError.httpError)); return }
+                guard (200..<300).contains(http.statusCode) else {
+                    gate.complete(.failure(DecisionsHTTPStatusError(statusCode: http.statusCode))); return
                 }
+                guard let data, data.count <= 100_000 else { gate.complete(.failure(RankingError.httpError)); return }
                 gate.complete(.success(data))
             }
             if gate.install({ task.cancel() }) {

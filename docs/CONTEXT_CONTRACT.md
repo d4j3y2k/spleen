@@ -4,6 +4,10 @@
 
 See [the implementation contract](SESSION_ATTENTION_IMPLEMENTATION.md) for bounded chronological message windows, separate inferred task/live runtime/unread states, stale-result rejection and trial activation. These message windows live in the separate relevance cache; `ContextMemory` remains metadata-only. Live indicators have a tested adapter entry point but no connected production Desktop source yet. Finished work is soft-demoted; hard exclusion remains disabled pending validation and requires fresh read+idle evidence.
 
+## Assessment storage — 8 November 2026
+
+When the optional Decisions assessment is on, the data directory also holds `assessment-on-open.json` (consent ID, daily cap and the key file's path; never the key), `assessment-ledgers/` (one file per local day, named by the assessment scope, holding only SHA-256 request fingerprints and reservation times), `decision-reviews/` (one-request ledgers for manually reviewed sends) and `assessments.json` (assessment labels keyed by a hash of the messages they describe). None of these contain conversation text or credentials. Ledgers older than yesterday are removed. The per-day cap continues across pause and re-enable because the ledger name does not depend on the consent ID.
+
 # Local context and discovery contract
 
 ## Turn timing and future activity adapters

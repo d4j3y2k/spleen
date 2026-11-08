@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SpleenCore
 
@@ -23,7 +24,7 @@ struct AttentionBadges: View {
                 Circle().fill(Color.blue).frame(width: 7, height: 7)
             }
             if showsWorking && sample?.activity == .working {
-                WorkingBadge()
+                WorkingStatus()
             }
             if sample?.completion != nil && sample?.activity != .working && sample?.isUnread != true {
                 Image(systemName: "checkmark.circle").foregroundStyle(.secondary).font(.system(size: 12))
@@ -38,27 +39,27 @@ struct AttentionBadges: View {
     }
 }
 
-/// An opaque status pill stays readable over both glass and a candy selection.
-/// Text and the persistent stripe make working recognizable without animation.
-struct WorkingBadge: View {
+/// A monochrome blinking dot makes the plain status easier to spot.
+struct WorkingStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.spleenSnapshot) private var snapshot
 
     var body: some View {
         HStack(spacing: 5) {
-            if reduceMotion {
-                Image(systemName: "gearshape.fill").font(.system(size: 10))
-                    .frame(width: 12, height: 12)
-            } else {
-                ProgressView().controlSize(.mini).tint(SpleenStyle.working)
-                    .frame(width: 12, height: 12)
+            Group {
+                if reduceMotion || snapshot {
+                    Circle().fill(.primary)
+                } else {
+                    BlinkingWorkingDot()
+                }
             }
-            Text("Working").font(.system(size: 10, weight: .semibold))
+            .frame(width: 7, height: 7)
+            .frame(width: 12, height: 12)
+            .accessibilityHidden(true)
+            Text("Working…").font(.system(size: 10.5, weight: .medium))
         }
-        .foregroundStyle(SpleenStyle.working)
-        .padding(.horizontal, 7).frame(height: 20)
-        .background(SpleenStyle.workingSurface, in: Capsule())
-        .overlay(Capsule().strokeBorder(SpleenStyle.working.opacity(contrast == .increased ? 1 : 0.35), lineWidth: 1))
+        .foregroundStyle(.primary)
+        .frame(height: 20)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Working")
@@ -66,18 +67,38 @@ struct WorkingBadge: View {
     }
 }
 
-extension View {
-    /// Uses the same fresh runtime state as the badge; selection keeps its own color.
-    func workingAccent(_ active: Bool, compact: Bool = false) -> some View {
-        overlay(alignment: .leading) {
-            if active {
-                Capsule().fill(SpleenStyle.working)
-                    .frame(width: 3)
-                    .padding(.vertical, compact ? 12 : 18)
-                    .padding(.leading, compact ? 3 : 5)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+/// Draw the blink natively so it does not depend on SwiftUI animation playback
+/// in a nonactivating panel. Removing the dot also stops its timer.
+private struct BlinkingWorkingDot: NSViewRepresentable {
+    func makeNSView(context: Context) -> ActivityDotView { ActivityDotView() }
+    func updateNSView(_ view: ActivityDotView, context: Context) {}
+    static func dismantleNSView(_ view: ActivityDotView, coordinator: ()) { view.stop() }
+
+    final class ActivityDotView: NSView {
+        private var bright = true
+        private var timer: Timer?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            bright = true
+            needsDisplay = true
+            let clock = Timer(timeInterval: 0.65, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.bright.toggle()
+                self.needsDisplay = true
             }
+            timer = clock
+            RunLoop.main.add(clock, forMode: .common)
         }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.labelColor.withAlphaComponent(bright ? 1 : 0.15).setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+
+        func stop() { timer?.invalidate(); timer = nil }
+        deinit { timer?.invalidate() }
     }
 }

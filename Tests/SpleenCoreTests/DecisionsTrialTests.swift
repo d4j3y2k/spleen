@@ -114,6 +114,29 @@ final class DecisionsTrialTests: XCTestCase {
             XCTAssertEqual(try ledger.status().reservedRequests, 0)
         }
     }
+    func testNonSuccessStatusIsReportedByCodeAndKeepsItsReservation() throws {
+        try withLedger { ledger, _ in
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [DecisionsStubProtocol.self]
+            let session = URLSession(configuration: config)
+            defer { session.invalidateAndCancel() }
+            DecisionsStubProtocol.reset(); DecisionsStubProtocol.status = 401
+            defer { DecisionsStubProtocol.reset() }
+            let transport = DecisionsHTTPTransport(approvedCredential: "synthetic-test-only", ledger: ledger, session: session)
+            let rejected = expectation(description: "status code surfaced")
+            transport.send(body: Data("rejected payload".utf8)) { result in
+                if case .failure(let error) = result, let http = error as? DecisionsHTTPStatusError {
+                    XCTAssertEqual(http.statusCode, 401); XCTAssertFalse(http.isTransient)
+                } else { XCTFail("a non-2xx reply must surface its status code") }
+                rejected.fulfill()
+            }
+            wait(for: [rejected], timeout: 2)
+            XCTAssertEqual(DecisionsStubProtocol.requests, 1)
+            XCTAssertEqual(try ledger.status().reservedRequests, 1, "a rejected request keeps its reservation")
+        }
+        XCTAssertTrue(DecisionsHTTPStatusError(statusCode: 429).isTransient)
+        XCTAssertTrue(DecisionsHTTPStatusError(statusCode: 503).isTransient)
+        XCTAssertFalse(DecisionsHTTPStatusError(statusCode: 400).isTransient)
+    }
     func testCancellationWinsSynchronousResponseRaceExactlyOnce() {
         var outcomes: [Result<Data, Error>] = [], taskCancellations = 0
         let gate = DecisionsRequestGate { outcomes.append($0) }
@@ -260,14 +283,19 @@ private final class DecisionsClockFixture {
 
 private final class DecisionsStubProtocol: URLProtocol {
     private static let lock = NSLock()
-    private static var count = 0
+    private static var count = 0, code = 200
     static var requests: Int { lock.lock(); defer { lock.unlock() }; return count }
-    static func reset() { lock.lock(); count = 0; lock.unlock() }
+    /// HTTP status the stub replies with; reset() restores 200.
+    static var status: Int {
+        get { lock.lock(); defer { lock.unlock() }; return code }
+        set { lock.lock(); code = newValue; lock.unlock() }
+    }
+    static func reset() { lock.lock(); count = 0; code = 200; lock.unlock() }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.lock.lock(); Self.count += 1; Self.lock.unlock()
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("{\"answers\":[]}".utf8))
         client?.urlProtocolDidFinishLoading(self)

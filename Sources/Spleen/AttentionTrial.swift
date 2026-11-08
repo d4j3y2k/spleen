@@ -19,10 +19,10 @@ func attentionTrialTransport(directory: URL, arguments: [String]) throws -> Deci
 /// Explicit local export. Reads at most eight recent sessions and exports at most two complete windows; never sends HTTP.
 func exportAttentionTrial(directory: URL, output: URL) throws {
     let catalog = try CatalogCache.load(from: directory.appendingPathComponent("catalog.json"))
-    let fresh = try CodexCatalogClient().fetch(policy: catalog.effectivePolicy)
+    let fresh = try installedCodexCatalogClient().fetch(policy: catalog.effectivePolicy)
     let entries = Array(fresh.entries.filter { catalog.includes($0) && !catalog.hiddenIDs.contains($0.id) }
         .sorted { $0.updatedAt > $1.updatedAt }.prefix(8))
-    let notes = try CodexCatalogClient().insights(entries: entries, policy: catalog.effectivePolicy)
+    let notes = try installedCodexCatalogClient().insights(entries: entries, policy: catalog.effectivePolicy)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     var bodies: [Data] = []
     for note in notes {

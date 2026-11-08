@@ -2,13 +2,17 @@
 """Install Spleen's metadata-only reports without replacing existing hooks/notify.
 The runtime's ordinary hook trust review remains mandatory and untouched.
 """
-import argparse, datetime, json, os, pathlib, re, shlex, shutil, tomllib
+import argparse, datetime, json, os, pathlib, re, shlex, shutil
 p = argparse.ArgumentParser()
 p.add_argument('--codex-home', type=pathlib.Path, default=pathlib.Path.home()/'.codex')
 p.add_argument('--data-dir', type=pathlib.Path, required=True)
 p.add_argument('--executable', type=pathlib.Path, required=True)
 p.add_argument('--install', action='store_true')
 a = p.parse_args()
+try:
+    import tomllib
+except ModuleNotFoundError:
+    p.exit(2, 'Spleen activity setup requires Python 3.11 or later (tomllib). Run this script with that interpreter; Apple\'s Python 3.9 is too old. No files changed.\n')
 root = a.codex_home.resolve(); data = a.data_dir.resolve(); exe = a.executable.resolve()
 assert exe.is_file() and os.access(exe, os.X_OK), 'Build Spleen first'
 config_path = root/'config.toml'; hook_path = root/'hooks.json'

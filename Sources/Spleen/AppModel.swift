@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
     }
     @Published var error: String?
     @Published var mode: Mode = .compass
+    private(set) var isPresentingModal = false
     @Published var editorID: UUID?
     @Published private(set) var editorCanRemove = false
     private var editorConversationKey: ConversationKey?
@@ -119,6 +120,8 @@ final class AppModel: ObservableObject {
     private var openTargets = Set<ConversationKey>()
     private var openTargetsUntil = -Double.infinity
     private var dailyLimitDay: String?
+    /// After a transient failure (network, 429, 5xx) no reservation is spent until this uptime.
+    private var assessmentBackoffUntil = -Double.infinity
     private var openAssessmentsSent = 0
     @Published var decisionReviewStatus = "Off · Review a conversation before sending it."
     @Published var decisionReviewBusy = false
@@ -185,6 +188,7 @@ final class AppModel: ObservableObject {
          rankingTransport: DecisionsTransport? = nil,
          assessmentTransport: DecisionsTransport? = nil,
          automaticConsent: AutomaticAttentionConsent? = nil,
+         automaticSetupFailure: String? = nil,
          desktopReadFetcher: (([ConversationKey], Date, UInt64, String) throws -> [LiveSessionState])? = nil,
          now: @escaping () -> Date = Date.init,
          uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
@@ -197,17 +201,18 @@ final class AppModel: ObservableObject {
         self.snapshotBuilder = snapshotBuilder
         self.catalogFetcher = discoveryFetcher ?? { policy in
             if let catalogFetcher { return try catalogFetcher(policy.folders) }
-            return try CodexCatalogClient().fetch(policy: policy)
+            return try installedCodexCatalogClient().fetch(policy: policy)
         }
         self.insightFetcher = { entries, policy in
             if let insightFetcher { return try insightFetcher(entries, policy.folders) }
-            return try CodexCatalogClient().insights(entries: entries, policy: policy)
+            return try installedCodexCatalogClient().insights(entries: entries, policy: policy)
         }
         self.rankingTransport = rankingTransport
         self.assessmentTransport = assessmentTransport
         self.automaticConsent = automaticConsent
         self.automaticAssessmentEnabled = automaticConsent != nil && assessmentTransport != nil
         if let automaticConsent { automaticAssessmentStatus = Self.openAssessmentOnStatus(automaticConsent) }
+        if let automaticSetupFailure { automaticAssessmentStatus = automaticSetupFailure }
         self.desktopReadFetcher = desktopReadFetcher
         self.repository = repository
         do { state = try repository.load() }
@@ -270,7 +275,7 @@ final class AppModel: ObservableObject {
             ? (visibleOrder ?? preparedOrder) : (visibleSnapshot ?? preparedSnapshot).results(query: query)
         if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
     }
-    func prepare() {
+    func prepare(assessOnOpen: Bool = true) {
         let start = ProcessInfo.processInfo.systemUptime
         let instant = now(), tick = uptime()
         let fresh = preparedContext.isFresh(now: instant, uptime: tick)
@@ -298,7 +303,7 @@ final class AppModel: ObservableObject {
             if self.presentationGeneration == invocation { self.refineOpeningIfReady() }
             self.refreshCatalog()
             self.pollDesktopReadState(force: true)
-            if self.automaticConsent != nil {
+            if assessOnOpen && self.automaticConsent != nil {
                 // Finish this press's cards even if the panel closes; nothing after 30 seconds.
                 self.openTargets = Set(self.compassItems.filter { $0.provider == .codex }.map(\.conversationKey))
                 self.openTargetsUntil = self.uptime() + 30
@@ -637,16 +642,36 @@ final class AppModel: ObservableObject {
     private static func openAssessmentOnStatus(_ consent: AutomaticAttentionConsent) -> String {
         "On · assesses changed Codex cards each time you open Spleen · up to \(consent.dailyLimit) requests a day."
     }
+    private static func rejectedStatus(_ error: DecisionsHTTPStatusError) -> String {
+        switch error.statusCode {
+        case 401, 403: return "OpenAI rejected the key (HTTP \(error.statusCode)). Paused with no further calls; check the key file, then turn assessment on again."
+        default: return "OpenAI rejected the request (HTTP \(error.statusCode)). Paused with no further calls."
+        }
+    }
+    static func describeFailure(_ error: Error) -> String {
+        if let http = error as? DecisionsHTTPStatusError { return "OpenAI replied HTTP \(http.statusCode)" }
+        if let trial = error as? DecisionsTrialError { return "request log: \(trial)" }
+        if let url = error as? URLError { return url.code == .timedOut ? "timed out" : "network unavailable" }
+        return "invalid response"
+    }
+    /// App-modal alerts and file pickers temporarily take the panel's key status.
+    /// Keep its current Settings/search context until the dialog returns.
+    func withModalPresentation<T>(_ body: () -> T) -> T {
+        let previous = isPresentingModal
+        isPresentingModal = true
+        defer { isPresentingModal = previous }
+        return body()
+    }
     func requestAutomaticAssessment() {
         let alert = NSAlert()
         alert.messageText = "Assess Codex cards each time you open Spleen?"
-        alert.informativeText = "Each time you press the Spleen shortcut, Spleen sends OpenAI the latest messages from any Codex card on screen whose text changed since it was last assessed: up to 6 recent user/assistant messages, 6,000 bytes per request. Text may include private topics and paths. No screenshots, tool output or full history, and nothing from Claude. Cards you don't see are never sent. Known secret-like text is skipped, but this is not a guarantee of anonymization. At most \(AutomaticAttentionConsent.defaultDailyLimit) requests a day, well under a cent; the cap is not a billing guarantee. Opening never waits for an answer. Stays on until you pause it; no actions or approvals are automated."
+        alert.informativeText = "Each time you press the Spleen shortcut, Spleen sends OpenAI the latest messages from any Codex card on screen whose text changed since it was last assessed: up to 6 recent user/assistant messages, 6,000 bytes per request. Text may include private topics and paths. No screenshots, tool output or full history, and nothing from Claude. Cards you don't see are never sent. Known secret-like text is skipped, but this is not a guarantee of anonymization. At most \(AutomaticAttentionConsent.defaultDailyLimit) requests a day, about a cent at most at the documented rate; the cap is not a billing guarantee. Opening never waits for an answer. Stays on until you pause it; no actions or approvals are automated."
         alert.addButton(withTitle: "Turn on"); alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard withModalPresentation({ alert.runModal() }) == .alertFirstButtonReturn else { return }
         let picker = NSOpenPanel(); picker.title = "Choose approved Spleen .env.local"
         picker.canChooseDirectories = false; picker.allowsMultipleSelection = false; picker.showsHiddenFiles = true
         picker.directoryURL = repository.url.deletingLastPathComponent().deletingLastPathComponent()
-        guard picker.runModal() == .OK, let url = picker.url else { return }
+        guard withModalPresentation({ picker.runModal() }) == .OK, let url = picker.url else { return }
         do {
             let consent = AutomaticAttentionConsent(enabled: true, id: "open-" + UUID().uuidString,
                 dailyLimit: AutomaticAttentionConsent.defaultDailyLimit, credentialPath: url.path, scope: AutomaticAttentionConsent.scopeName)
@@ -654,7 +679,7 @@ final class AppModel: ObservableObject {
             let transport = try consent.transport(in: directory)
             try consent.save(in: directory)
             activateAutomaticAssessment(consent: consent, transport: transport)
-        } catch { automaticAssessmentStatus = "Setup failed; no requests started." }
+        } catch { automaticAssessmentStatus = "Setup failed; no requests started. The key file must be an owner-only regular file (chmod 600) holding OPENAI_API_KEY=sk-… or just the key." }
     }
     /// Sends nothing by itself: the next shortcut press starts assessment.
     func activateAutomaticAssessment(consent: AutomaticAttentionConsent, transport: DecisionsTransport) {
@@ -664,13 +689,18 @@ final class AppModel: ObservableObject {
         automaticConsent = consent; assessmentTransport = transport; automaticAssessmentEnabled = true
         automaticAssessmentStatus = Self.openAssessmentOnStatus(consent)
         assessmentAttempts.removeAll(); openTargets.removeAll(); dailyLimitDay = nil; openAssessmentsSent = 0
+        assessmentBackoffUntil = -.infinity
     }
     func pauseAutomaticAssessment(status: String = "Paused. Saved labels remain; no further calls.") {
         assessmentTimeout?.cancel(); assessmentTimeout = nil; openTargets.removeAll()
         assessmentEpoch = UUID(); assessmentSelecting = false
         assessmentActive = nil; cancelAssessment?(); cancelAssessment = nil; assessmentTransport = nil
         automaticAssessmentEnabled = false; automaticAssessmentStatus = status
-        if var consent = automaticConsent { consent.enabled = false; try? consent.save(in: repository.url.deletingLastPathComponent()) }
+        if var consent = automaticConsent {
+            consent.enabled = false
+            do { try consent.save(in: repository.url.deletingLastPathComponent()) }
+            catch { automaticAssessmentStatus = status + " The paused setting could not be saved, so assessment may resume after relaunch." }
+        }
         automaticConsent = nil
     }
     /// User-triggered only. Snapshot the exact evidence and review it before any HTTP.
@@ -705,13 +735,13 @@ final class AppModel: ObservableObject {
             text.isVerticallyResizable = true; text.autoresizingMask = [.width]
             scroll.documentView = text; scroll.hasVerticalScroller = true
             alert.accessoryView = scroll
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard withModalPresentation({ alert.runModal() }) == .alertFirstButtonReturn else { return }
             let panel = NSOpenPanel()
             panel.title = "Choose Spleen’s approved .env.local or API-key file"
             panel.message = "Used only for this request. The key is never displayed or copied to another file."
             panel.canChooseDirectories = false; panel.allowsMultipleSelection = false; panel.showsHiddenFiles = true
             panel.directoryURL = repository.url.deletingLastPathComponent().deletingLastPathComponent()
-            guard panel.runModal() == .OK, let url = panel.url else { return }
+            guard withModalPresentation({ panel.runModal() }) == .OK, let url = panel.url else { return }
             let key = try attentionCredential(at: url)
             let configuration = try DecisionsTrialConfiguration(id: "review-" + UUID().uuidString, maximumRequests: 1,
                 expiresAt: now().addingTimeInterval(60))
@@ -744,8 +774,8 @@ final class AppModel: ObservableObject {
                     self.insightSaveQueue.async { if let data = try? JSONEncoder().encode(cache) { try? data.write(to: url, options: .atomic) } }
                     self.rebuildSnapshot()
                     self.decisionReviewStatus = "Result: \(result.assessment.rawValue.replacingOccurrences(of: "_", with: " ")) · \(String(format: "%.2f", self.uptime() - started))s · no further calls."
-                case .failure:
-                    self.decisionReviewStatus = "Assessment unavailable. Not retried; local ranking unchanged."
+                case .failure(let error):
+                    self.decisionReviewStatus = "Assessment unavailable (\(Self.describeFailure(error))). Not retried; local ranking unchanged."
                 }
             }
         }
@@ -760,7 +790,7 @@ final class AppModel: ObservableObject {
         // Assessment on open sends only the latest press's cards; the reviewed CLI trial keeps its per-launch cap.
         let onOpen = automaticConsent != nil
         if onOpen {
-            guard !openTargets.isEmpty, uptime() <= openTargetsUntil,
+            guard !openTargets.isEmpty, uptime() <= openTargetsUntil, uptime() >= assessmentBackoffUntil,
                   dailyLimitDay != DailyDecisionsTransport.day(for: now()) else { return }
         } else if assessmentAttempts.count >= 20 { return }
         let targets = openTargets, instant = now()
@@ -813,24 +843,33 @@ final class AppModel: ObservableObject {
                                 self.rebuildSnapshot()
                             }
                             if let consent = self.automaticConsent {
-                                var limited = false
-                                if case .failure(let error) = response, let trial = error as? DecisionsTrialError {
-                                    switch trial {
-                                    case .limitReached:
-                                        // Nothing was sent; this text can be assessed again tomorrow.
-                                        self.openAssessmentsSent -= 1; limited = true
+                                var status: String?
+                                if case .failure(let error) = response {
+                                    if let trial = error as? DecisionsTrialError {
+                                        switch trial {
+                                        case .limitReached:
+                                            // Nothing was sent; this text can be assessed again tomorrow.
+                                            self.openAssessmentsSent -= 1
+                                            self.assessmentAttempts.remove(window.contentVersion)
+                                            self.dailyLimitDay = DailyDecisionsTransport.day(for: self.now())
+                                            status = "Today's \(consent.dailyLimit) requests are used · resumes tomorrow. Saved labels remain."
+                                        case .duplicateRequest: self.openAssessmentsSent -= 1 // Already sent today; not resent.
+                                        case .configurationMismatch, .corruptLedger, .invalidConfiguration:
+                                            self.pauseAutomaticAssessment(status: "Request log unavailable; paused with no further calls.")
+                                        default: break
+                                        }
+                                    } else if let http = error as? DecisionsHTTPStatusError, !http.isTransient {
+                                        // A rejected key or request will fail the same way every time; stop spending reservations.
+                                        self.pauseAutomaticAssessment(status: Self.rejectedStatus(http))
+                                    } else if error is DecisionsHTTPStatusError || ((error as? URLError).map { $0.code != .cancelled } ?? false) {
+                                        // Keep this text eligible, but wait before another reservation is spent on it.
                                         self.assessmentAttempts.remove(window.contentVersion)
-                                        self.dailyLimitDay = DailyDecisionsTransport.day(for: self.now())
-                                    case .duplicateRequest: self.openAssessmentsSent -= 1 // Already sent today; not resent.
-                                    case .configurationMismatch, .corruptLedger, .invalidConfiguration:
-                                        self.pauseAutomaticAssessment(status: "Request log unavailable; paused with no further calls.")
-                                    default: break
+                                        self.assessmentBackoffUntil = self.uptime() + 60
+                                        status = "On · \(Self.describeFailure(error)) · tries again on a later opening, after a minute."
                                     }
                                 }
                                 if self.automaticAssessmentEnabled {
-                                    self.automaticAssessmentStatus = limited
-                                        ? "Today's \(consent.dailyLimit) requests are used · resumes tomorrow. Saved labels remain."
-                                        : "On · \(self.openAssessmentsSent) sent since launch · unchanged cards reuse saved labels."
+                                    self.automaticAssessmentStatus = status ?? "On · \(self.openAssessmentsSent) sent since launch · unchanged cards reuse saved labels."
                                 }
                             }
                             self.assessChangedSessions()

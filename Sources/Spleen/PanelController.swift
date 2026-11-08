@@ -188,7 +188,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                               width: size.width, height: size.height), display: session.isPresented, animate: false)
     }
     func toggle() { session.isPresented ? dismiss(.cancel) : present() }
-    func present(reset: Bool = true, orderFront: Bool = true) {
+    func present(reset: Bool = true, orderFront: Bool = true, assessOnOpen: Bool = true) {
         guard !session.isPresented else {
             if orderFront && !panel.isKeyWindow {
                 panel.makeKeyAndOrderFront(nil)
@@ -197,7 +197,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             return
         }
         restorationTraceGeneration &+= 1
-        if reset { model.prepare() }
+        if reset { model.prepare(assessOnOpen: assessOnOpen) }
         resize(for: model.mode)
         session.present(priorPID: currentPID())
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
@@ -245,7 +245,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) { trace("panel.key.became") }
     func windowDidResignKey(_ notification: Notification) {
         trace("panel.key.resigned")
-        if session.isPresented && panel.attachedSheet == nil { dismiss(.focusLoss) }
+        if session.isPresented && panel.attachedSheet == nil && !model.isPresentingModal { dismiss(.focusLoss) }
     }
     func open(_ item: Destination) {
         guard session.isPresented else { return }

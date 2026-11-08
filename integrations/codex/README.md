@@ -1,4 +1,35 @@
-# Optional Codex metadata hook
+# Optional Codex integrations
+
+For **Working** and completed-turn indicators, start with [activity reports](ACTIVITY.md) and the [installation notes](../../docs/LIVE_INDICATORS.md#installation-and-trust). The examples are not installed automatically. The installation notes include the author's local verification history; a fresh checkout still needs its own setup and normal Codex hook review.
+
+The simpler context hook below records lifecycle metadata and does not power the working indicators.
+
+## Set up activity reports in a fresh checkout
+
+Build Spleen first. The installer needs **Python 3.11 or later** for its standard-library TOML parser; Apple's bundled Python 3.9 is too old. Check `python3 --version` and substitute a newer interpreter name, such as `python3.13`, in the commands below if needed. No Python packages are required. The generated notification helper uses Apple's Python and does not need TOML support.
+
+From the repository root, review the proposed setup without changing files:
+
+```sh
+python3 scripts/install-activity-reports.py \
+  --data-dir "$PWD/.local-state" \
+  --executable "$PWD/build/Spleen.app/Contents/MacOS/Spleen"
+```
+
+After reviewing the script and example hooks, run the same command with `--install`, then enable Spleen's metadata journal:
+
+```sh
+python3 scripts/install-activity-reports.py \
+  --data-dir "$PWD/.local-state" \
+  --executable "$PWD/build/Spleen.app/Contents/MacOS/Spleen" --install
+./build/Spleen.app/Contents/MacOS/Spleen --data-dir "$PWD/.local-state" --enable-activity-reports
+```
+
+These paths match `scripts/run.sh`. For a directly launched app, use its actual data directory and executable instead. The installer defaults to `~/.codex`; pass `--codex-home /absolute/config-directory` if your Codex configuration is elsewhere. It preserves other hook handlers and the existing notification command, and saves private timestamped backups in the chosen data directory. Unsupported configuration shapes are rejected before installation.
+
+Finally, use Codex's **Review hooks** or **Settings → Hooks** to review and trust the new exact definitions. Installation alone does not trust them. Existing sessions may need to be reopened to load the hooks. See [coverage and expiry limits](../../docs/LIVE_INDICATORS.md); the historical verification there is not setup performed on a fresh checkout.
+
+## Context metadata hook
 
 This example is not installed. It is for local Codex hooks only; it does not provide ordinary Claude Desktop discovery or selection tracking.
 

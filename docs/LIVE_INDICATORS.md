@@ -4,9 +4,9 @@ The running Spleen build now has actual source adapters, not just injected UI sa
 
 ## Clearer working indicators — 0.2.24
 
-Working conversations show a green **Working** pill containing the spinner, plus a persistent green stripe on compass cards, recent-session rows, and search results. The opaque pill stays readable over glass and either provider's candy selection. Reduced motion substitutes a static gear; the label and stripe remain visible. Card footers and recent-row status lines reserve their height so activity updates do not move titles or neighboring rows.
+Working conversations show a blinking monochrome dot beside plain **Working…** text and slightly bolder titles on compass cards, recent-session rows, and search results. The dot draws natively in AppKit; a common-mode timer alternates full and 15% opacity every 0.65 seconds. Activity uses the normal text color, with no additional pill, stripe, or colored highlight. Reduced motion keeps the dot steady and removes its timer; the status text remains visible. The separate blue unread dot does not blink. Card footers and recent-row status lines reserve their height. Synthetic snapshots hold the activity dot at full opacity.
 
-Both cues use the same fresh `.working` sample as the previous spinner. Unread, approval/input and completion remain independent; old reply timestamps and recent activity do not turn on the cues. The existing runtime coverage and expiry limits below still apply.
+The cues use the same fresh `.working` sample as the previous spinner. Unread, approval/input and completion remain independent; old reply timestamps and recent activity do not turn on the cues. The existing runtime coverage and expiry limits below still apply.
 
 Validation: release build, strict signature verification using the existing Apple Development identity, and 406/406 native checks passed. Twenty synthetic previews cover both appearances, selected Codex and Claude cards, an active long title, selected recents, search, and high-contrast appearance fixtures. [Build](../evidence/active-thread-build.txt) · [Native checks](../evidence/active-thread-native-tests.txt) · [Dark preview](../evidence/active-thread-previews/native-fixture-compass-dark@2x.png).
 

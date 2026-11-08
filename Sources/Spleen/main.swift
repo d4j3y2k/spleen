@@ -1,6 +1,15 @@
 import AppKit
 import SpleenCore
 
+/// Follow the registered/running Desktop app when it is renamed or installed
+/// outside /Applications. Never substitute an unrelated CLI from the user's PATH.
+func installedCodexCatalogClient(applicationURL: URL? =
+    NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").first?.bundleURL
+        ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex")) -> CodexCatalogClient {
+    guard let applicationURL else { return CodexCatalogClient() }
+    return CodexCatalogClient(executable: applicationURL.appendingPathComponent("Contents/Resources/codex-cli/bin/codex"))
+}
+
 func spleenDataDirectory(_ arguments: [String] = CommandLine.arguments) -> URL {
     if let index = arguments.firstIndex(of: "--data-dir"), arguments.indices.contains(index + 1) {
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
@@ -60,14 +69,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let folders = arguments.firstIndex(of: "--catalog-folder").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }.map { [$0] } ?? []
         var assessmentTransport: DecisionsTransport?
         var automaticConsent: AutomaticAttentionConsent?
+        // A standing opt-in that cannot start must say so in Settings rather than silently showing "Off".
+        var automaticSetupFailure: String?
         do {
             if let consent = try AutomaticAttentionConsent.load(from: directory) {
-                assessmentTransport = try consent.transport(in: directory); automaticConsent = consent
+                do { assessmentTransport = try consent.transport(in: directory); automaticConsent = consent }
+                catch {
+                    automaticSetupFailure = "Paused: the key file at \(consent.credentialPath) could not be read. It must be an owner-only regular file. Nothing is sent; fix the file and relaunch, or turn assessment on again."
+                }
             } else { assessmentTransport = try attentionTrialTransport(directory: directory, arguments: arguments) }
         }
-        catch { assessmentTransport = nil; automaticConsent = nil; print("Attention setup unavailable; continuing locally without API requests.") }
+        catch {
+            assessmentTransport = nil; automaticConsent = nil
+            if FileManager.default.fileExists(atPath: AutomaticAttentionConsent.location(directory).path) {
+                automaticSetupFailure = "Off: the assessment-on-open settings file could not be read, so nothing is sent. Turn it on again to replace it."
+            }
+            print("Attention setup unavailable; continuing locally without API requests.")
+        }
         let model = AppModel(repository: StateRepository(url: directory.appendingPathComponent("destinations.json")), initialFolders: folders,
-                             assessmentTransport: assessmentTransport, automaticConsent: automaticConsent,
+                             assessmentTransport: assessmentTransport, automaticConsent: automaticConsent, automaticSetupFailure: automaticSetupFailure,
                              desktopReadFetcher: { keys, instant, sequence, epoch in
                                  guard NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.openai.codex" }) else {
                                      throw CatalogError.unavailable
@@ -93,7 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Quit Spleen", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
         statusItem.menu = menu
-        if !CommandLine.arguments.contains("--background-launch") { controller.present() }
+        // Restoring a standing opt-in never authorizes a request just by launching.
+        if !CommandLine.arguments.contains("--background-launch") { controller.present(assessOnOpen: false) }
     }
     @objc func show() { controller.present() }
     @objc func openDot() { controller.openDot() }
@@ -314,7 +335,7 @@ if CommandLine.arguments.contains("--codex-selection-probe") {
 }
 if CommandLine.arguments.contains("--discovery-check") {
     do {
-        let value = try CodexCatalogClient().fetch(policy: DiscoveryPolicy(pageSize: 100, maxPages: 10))
+        let value = try installedCodexCatalogClient().fetch(policy: DiscoveryPolicy(pageSize: 100, maxPages: 10))
         print("Automatic metadata discovery: \(value.entries.count) chats across \(Set(value.entries.map(\.folder)).count) projects; truncated=\(value.truncated). No titles, paths, notes, or contents logged or cached.")
         exit(0)
     } catch { print(error.localizedDescription); exit(1) }
@@ -327,7 +348,7 @@ if CommandLine.arguments.contains("--relevance-check") {
     }
     do {
         let start = ProcessInfo.processInfo.systemUptime
-        let client = CodexCatalogClient(), value = try client.fetch(folders: folders)
+        let client = installedCodexCatalogClient(), value = try client.fetch(folders: folders)
         let notes = try client.insights(entries: Array(value.entries.prefix(8)), folders: folders)
         var catalog = CatalogCache(); catalog.folders = folders; catalog.entries = value.entries
         let snapshot = RelevanceSnapshot(state: SavedState(), catalog: catalog, insights: notes)
@@ -341,7 +362,7 @@ if CommandLine.arguments.contains("--catalog-check") {
         exit(2)
     }
     do {
-        let value = try CodexCatalogClient().fetch(folders: folders)
+        let value = try installedCodexCatalogClient().fetch(folders: folders)
         print("Swift catalog adapter: \(value.entries.count) entries, truncated=\(value.truncated). No identities, titles, paths, or contents logged or cached.")
         exit(0)
     } catch { print(error.localizedDescription); exit(1) }

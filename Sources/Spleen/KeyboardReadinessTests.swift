@@ -140,6 +140,19 @@ func runKeyboardReadinessTests() -> (passed: Int, failures: [String]) {
               "reopening a nonkey panel preserves search and selection")
         controller.dismiss(.cancel)
 
+        controller.present(orderFront: false)
+        model.showSettings()
+        model.withModalPresentation {
+            controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: controller.panel))
+            check(controller.session.isPresented && model.mode == .settings,
+                  "an owned modal dialog preserves the panel's Settings context")
+            model.withModalPresentation { check(model.isPresentingModal, "nested modal presentation retains the guard") }
+            check(model.isPresentingModal, "returning from an inner modal preserves the outer guard")
+        }
+        check(!model.isPresentingModal, "returning from the modal restores normal focus-loss handling")
+        controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: controller.panel))
+        check(!controller.session.isPresented, "ordinary focus loss still dismisses after a modal")
+
         let emptyRepository = StateRepository(url: directory.appendingPathComponent("empty/state.json"))
         try emptyRepository.save(SavedState())
         let emptyModel = AppModel(repository: emptyRepository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] })

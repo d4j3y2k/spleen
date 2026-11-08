@@ -145,7 +145,7 @@ struct SwitcherView: View {
                     ProviderMark(provider: item.provider, size: 30, candy: selected)
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 6) {
-                            Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+                            Text(item.title).font(.system(size: 14, weight: live?.activity == .working ? .semibold : .medium)).lineLimit(1)
                             if item.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
                             AttentionBadges(sample: live)
                         }
@@ -172,7 +172,6 @@ struct SwitcherView: View {
         }
         .candyText(selected, palette: SpleenStyle.candy(for: item.provider))
         .background(SpleenRowHighlight(selected: selected, palette: SpleenStyle.candy(for: item.provider)))
-        .workingAccent(live?.activity == .working, compact: true)
     }
 
     private var searchEmptyState: some View {
@@ -220,6 +219,8 @@ struct SwitcherView: View {
                             Text("Keep up to two conversations nearby.").font(.system(size: 11)).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.toggleStyle(.switch).controlSize(.small)
+                        .accessibilityLabel("Pin to your compass")
+                        .accessibilityHint("Keep up to two conversations nearby.")
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,7 +301,7 @@ struct SwitcherView: View {
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             settingsStatus(model.codexContextStatus)
                         }
-                        SettingsSection(title: "Claude", symbol: "sun.max") {
+                        SettingsSection(title: "Claude", provider: .claude) {
                             settingsToggle("Remember visited Claude Desktop sessions", isOn: $model.observeClaudeDraft)
                             Text("Keeps titles, identities, and available reply times for 30 days. Checks the open Code session for working and unread indicators, including in the background. Message bodies are not read.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -327,7 +328,7 @@ struct SwitcherView: View {
                             }
                             settingsStatus(model.automaticAssessmentStatus)
                         }
-                        SettingsSection(title: "Codex", symbol: "chevron.left.forwardslash.chevron.right") {
+                        SettingsSection(title: "Codex", provider: .codex) {
                             settingsToggle("Discover Codex projects automatically", isOn: $model.automaticDiscoveryDraft)
                             if !model.automaticDiscoveryDraft { folderSettings }
                             settingsStatus(model.unreadIndicatorStatus)

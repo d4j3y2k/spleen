@@ -1,12 +1,10 @@
-# Task assessment addition — 5 November 2026
+# Decisions ranking experiment — dormant
 
-The new task-assessment path is separate from next-chat ranking. Normal launch still makes zero Decisions calls. See [Session attention implementation](SESSION_ATTENTION_IMPLEMENTATION.md) for the exact-payload, expiring, at-most-two-request trial exporter and explicit credential-file activation. No paid trial has run. The ranking details below describe the earlier optional next-chat adapter.
+This document describes the experimental next-chat ranking adapter and its offline evaluation harness. The app does not supply that adapter with a network transport. The separately implemented [task assessment](SESSION_ATTENTION_IMPLEMENTATION.md) supports a reviewed single request, an explicit assessment-on-open opt-in, and a finite command-line trial.
 
-# Optional Decisions trial — not enabled
+By default the app makes **zero Decisions calls**. A saved assessment opt-in does not send a request at launch; assessment starts on a subsequent opening of the switcher. Enabling task assessment does not enable the ranking experiment described below.
 
-The shipping app makes **zero Decisions calls** and constructs no remote transport. Implementation authorization does not authorize sending personal conversation metadata or discovering credentials. The Decisions endpoint uses its own supported model.
-
-The [official guide checked for this implementation](https://developers.openai.com/api/docs/guides/decisions) specifies `POST /v1/decisions`, model `gpt-6-luna`, structured `input_json`, and `choice` questions with option probabilities. Real account access, pricing, API latency, and ranking quality remain unmeasured. Verify current pricing and account controls before any paid trial.
+The [official guide checked for this implementation](https://developers.openai.com/api/docs/guides/decisions) specifies `POST /v1/decisions`, model `gpt-6-luna`, structured `input_json`, and `choice` questions with option probabilities. Ranking usefulness and real-world latency remain unevaluated. Check current pricing and account controls before a paid experiment.
 
 ## Implemented boundary
 
@@ -42,17 +40,17 @@ The default suite's 18 openings (17 labels, one dismissal) include scripted wins
 
 ## Durable allowance
 
-A `DecisionsHTTPTransport` requires an explicitly supplied credential and `DecisionsTrialLedger`; it never discovers credentials. Its default URLSession is ephemeral. The production app does not instantiate it.
+A `DecisionsHTTPTransport` requires an explicitly supplied credential and `DecisionsTrialLedger`; it never discovers credentials. Its default URLSession is ephemeral. The next-chat ranking adapter does not instantiate it; the separately authorized assessment paths do.
 
 The ledger contains an immutable trial ID, expiry, finite maximum request count (1…100; proposed trial 20), and only SHA-256 body fingerprints plus reservation times. Stable sidecar locking, bounded regular-file reads, corruption/symlink rejection, private atomic writes, and synchronization preserve the allowance across cooperating processes and restarts. Changing the configuration cannot silently reset an existing ledger. Duplicate payloads are rejected. No credential, body, label, or note is stored in the ledger.
 
 Reservation precedes HTTP on a utility queue. Failed, cancelled, expired-after-reservation, or unused attempts consume their reservation; no refunds or retries can exceed the allowance. Expiry is checked again after disk work before HTTP starts. Cancellation claims completion atomically and calls the client at most once. The in-memory pipeline separately caps attempts, suppresses identical generations, rejects late results after 750 ms, and expires accepted order after 120 seconds.
 
-**This enforces a request allowance, not a hard dollar cap.** Spending authorization and any supported account-level limit must be settled before paid use. No dollar amount has been approved or spent here.
+**This enforces a request allowance, not a hard dollar cap.** Review current pricing and choose an appropriate request allowance before paid use.
 
 ## Small proposed experiment
 
-1. Choose 5–8 personal candidates and exactly which context fields/notes may leave the machine. The existing Spleen cache and a counts-only survey of 541 chats are not an approved remote data set.
+1. Choose 5–8 candidates and explicitly review which context fields and notes may leave the machine. An existing local cache is not permission to transmit its contents.
 2. Review the exact populated payload, explicit supported credential setup, trial expiry, maximum requests, applicable pricing, and authorized spend.
 3. Use a separate explicitly enabled shadow harness; do not change candidate generation or pins. Stop after the allowance/expiry, with no recurring service or automatic retry.
 4. Measure candidate coverage, local/deployed top-three success over **all** labeled invocations, ready-only top-three success, readiness/latency, and usage/spend. A missing target counts as a miss; dismissals have no invented target. Eventually selected IDs must never enter their own pre-choice input.
