@@ -8,7 +8,8 @@ struct DotButton: View {
         Button { model.openDot?() } label: {
             HStack(spacing: 7) {
                 Image(systemName: "circle.inset.filled").foregroundStyle(SpleenStyle.accent)
-                Text("Dot").font(.system(size: 12, weight: .medium))
+                // A newcomer has no Dot yet; say what the chip does instead of naming it.
+                Text(model.dotURL == nil ? "Set up Dot" : "Dot").font(.system(size: 12, weight: .medium))
                 Text("⌘D").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).frame(height: 36)
@@ -149,13 +150,14 @@ struct SwitcherView: View {
                             if item.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
                             AttentionBadges(sample: live)
                         }
-                        HStack(spacing: 8) {
+                        // The separator matches the ones inside the subtitle, so the line reads evenly.
+                        HStack(spacing: 0) {
                             Text(model.subtitle(item)).lineLimit(1).layoutPriority(-1)
                             if let timing = model.timingLabel(item, separator: " · ") {
-                                Text("·").foregroundStyle(.tertiary)
+                                Text(" · ")
                                 Text(timing).lineLimit(1).help(model.timingHelp(item))
                             }
-                        }.font(.system(size: 10.5)).foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
+                        }.font(.system(size: 11)).foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
                     }
                     Spacer(minLength: 8)
                     KeyCap(text: "↵", candy: true).opacity(selected ? 1 : 0)
@@ -242,10 +244,7 @@ struct SwitcherView: View {
     private func editorField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
-            content().textFieldStyle(.plain).font(.system(size: 14))
-                .padding(11)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(SpleenStyle.line))
+            content().spleenField()
         }
     }
 
@@ -272,13 +271,15 @@ struct SwitcherView: View {
                                 }.frame(width: 155)
                                 Spacer()
                                 Text("Letter keys use US keyboard positions.")
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
                             }
-                            Text(model.shortcutStatus).font(.system(size: 11)).foregroundStyle(.secondary)
+                            if !model.shortcutStatus.isEmpty {
+                                Text(model.shortcutStatus).font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
                         }
                         SettingsSection(title: "Dot", symbol: "circle.inset.filled") {
                             TextField("Paste your Dot’s Codex chat link", text: $model.dotLinkDraft)
-                                .textFieldStyle(.roundedBorder)
+                                .spleenField()
                                 .accessibilityLabel("Dot conversation link")
                             Text("Open your Dot with ⌘D while Spleen is open, or choose Open Dot from the menu bar.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -337,7 +338,7 @@ struct SwitcherView: View {
                                 Button("Restore removed discovered chats") { model.restoreHiddenChats() }.controlSize(.small)
                             }
                         }
-                    }.padding(10)
+                    }.padding(10).padding(.bottom, 10)
                 }
             }
             SpleenBar(height: 44, trailingInset: 8) {

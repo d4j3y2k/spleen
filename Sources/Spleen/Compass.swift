@@ -113,14 +113,13 @@ struct CompassView: View {
 
     private var recentPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Recent sessions").font(.system(size: 15, weight: .semibold))
-                    Text("Recently opened or created").font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                KeyCap(text: model.browsingRecents ? "↑ ↓" : "→ →", emphasized: model.browsingRecents)
-            }.padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
+            // The footer carries the one key hint for this list; the selected row shows that it is active.
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Recent sessions").font(.system(size: 15, weight: .semibold))
+                Text("Recently opened or created").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
             if model.recentSessions.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "clock.arrow.circlepath")
@@ -176,7 +175,7 @@ struct CompassView: View {
                     // The list is ordered by navigation, so its row shows that time;
                     // the reply time stays in the tooltip.
                     HStack(spacing: 6) {
-                        Text(model.recentLabel(entry)).font(.system(size: 10.5))
+                        Text(model.recentLabel(entry)).font(.system(size: 11))
                             .foregroundStyle(.secondary).lineLimit(1).help(model.timingHelp(item))
                         Spacer(minLength: 0)
                         AttentionBadges(sample: live)
@@ -245,7 +244,7 @@ struct CompassView: View {
                 HStack(spacing: 6) {
                     if live?.activity == .working { WorkingStatus() }
                     Text(model.primaryTimingLabel(item) ?? project ?? "Saved conversation")
-                        .font(.system(size: 10.5)).foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
+                        .font(.system(size: 11)).foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
                         .lineLimit(1)
                         .help(model.timingHelp(item))
                 }
@@ -286,7 +285,7 @@ struct CompassView: View {
                 }
                 Spacer(minLength: 8)
                 if let timing = model.timingLabel(item, separator: " · ") {
-                    Text(timing).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(timing).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
             }

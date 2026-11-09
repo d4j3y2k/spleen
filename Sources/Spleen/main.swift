@@ -33,6 +33,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var controller: PanelController!
     var hotkey: HotKey!
     var statusItem: NSStatusItem!
+    private var openItem: NSMenuItem?
+    /// Shows the shortcut on the menu bar item and its Open command. This is display only:
+    /// the status menu is not the main menu, so AppKit never dispatches this key equivalent.
+    /// The hotkey itself is registered separately.
+    private func showShortcut(_ shortcut: Shortcut) {
+        statusItem?.button?.toolTip = "Spleen · \(shortcut.label)"
+        var mask: NSEvent.ModifierFlags = []
+        if shortcut.control { mask.insert(.control) }
+        if shortcut.option { mask.insert(.option) }
+        if shortcut.shift { mask.insert(.shift) }
+        if shortcut.command { mask.insert(.command) }
+        openItem?.keyEquivalent = shortcut.key == "Space" ? " " : shortcut.key.lowercased()
+        openItem?.keyEquivalentModifierMask = mask
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--self-test") {
             let success = runAppTests()
@@ -98,14 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.startFrontApplicationTracking()
         hotkey = HotKey()
         hotkey.onPress = { [weak self] in trace("hotkey.received"); self?.controller.toggle() }
-        model.changeShortcut = { [weak self] shortcut in try self?.hotkey.register(shortcut) }
+        model.changeShortcut = { [weak self] shortcut in
+            try self?.hotkey.register(shortcut)
+            self?.showShortcut(shortcut)
+        }
         do { try hotkey.register(model.state.shortcut); model.shortcutStatus = "Shortcut: \(model.state.shortcut.label)" }
         catch { model.shortcutStatus = error.localizedDescription; model.error = error.localizedDescription }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = SpleenLogo.menuBarImage
-        statusItem.button?.toolTip = "Spleen · \(model.state.shortcut.label)"
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open Spleen", action: #selector(show), keyEquivalent: "")
+        openItem = menu.addItem(withTitle: "Open Spleen", action: #selector(show), keyEquivalent: "")
+        showShortcut(model.state.shortcut)
         menu.addItem(withTitle: "Open Dot", action: #selector(openDot), keyEquivalent: "d")
         menu.addItem(withTitle: "Search conversations…", action: #selector(search), keyEquivalent: "")
         menu.addItem(withTitle: "Add conversation…", action: #selector(add), keyEquivalent: "")

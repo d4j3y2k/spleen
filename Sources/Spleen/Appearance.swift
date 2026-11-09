@@ -306,6 +306,16 @@ struct SwitcherHeader<Trailing: View>: View {
     }
 }
 
+/// Text entry inside a glass panel: a quiet tinted well rather than a bordered system field.
+extension View {
+    func spleenField() -> some View {
+        textFieldStyle(.plain).font(.system(size: 14))
+            .padding(11)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(SpleenStyle.line))
+    }
+}
+
 /// The floating capsule along the bottom of every Spleen view. Trailing
 /// controls sit concentric with its rounded end.
 struct SpleenBar<Content: View>: View {

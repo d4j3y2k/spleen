@@ -56,7 +56,7 @@ struct WorkingStatus: View {
             .frame(width: 7, height: 7)
             .frame(width: 12, height: 12)
             .accessibilityHidden(true)
-            Text("Working…").font(.system(size: 10.5, weight: .medium))
+            Text("Working…").font(.system(size: 11, weight: .medium))
         }
         .foregroundStyle(.primary)
         .frame(height: 20)
