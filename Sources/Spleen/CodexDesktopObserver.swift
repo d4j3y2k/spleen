@@ -46,6 +46,9 @@ final class CodexDesktopObserver {
 
     private let queue = DispatchQueue(label: "spleen.codex-observation", qos: .utility)
     private let queueKey = DispatchSpecificKey<Bool>()
+    /// Fired as soon as a supported route is accepted in front, before the visit dwell.
+    /// Placement only: the receiver must not record it as a visit.
+    private let onForeground: ((CodexDesktopObservation) -> Void)?
     private let onObservation: (CodexDesktopObservation) -> Void
     private let diagnosticsEnabled: Bool
     private var statistics: Diagnostics
@@ -62,7 +65,9 @@ final class CodexDesktopObserver {
     private let gate = CodexDesktopObservationGate()
     private static let bundleID = "com.openai.codex"
 
-    init(diagnosticsEnabled: Bool = false, onObservation: @escaping (CodexDesktopObservation) -> Void) {
+    init(diagnosticsEnabled: Bool = false, onForeground: ((CodexDesktopObservation) -> Void)? = nil,
+         onObservation: @escaping (CodexDesktopObservation) -> Void) {
+        self.onForeground = onForeground
         self.onObservation = onObservation
         self.diagnosticsEnabled = diagnosticsEnabled
         statistics = Diagnostics(enabled: diagnosticsEnabled)
@@ -322,7 +327,7 @@ final class CodexDesktopObserver {
     }
 
     private func deliver(_ observation: CodexDesktopObservation, pid: pid_t, ticket: CodexDesktopObservationGate.Ticket) {
-        let gate = self.gate, callback = onObservation
+        let gate = self.gate, callback = onObservation, fronted = onForeground
         DispatchQueue.main.async { [weak self] in
             guard Self.isTrusted else {
                 self?.count(\.permissionFailures); gate.invalidate()
@@ -333,6 +338,7 @@ final class CodexDesktopObserver {
                   app.bundleIdentifier == Self.bundleID else { self?.count(\.foregroundDeliveryRejections); return }
             guard gate.acceptDelivery(observation, for: ticket) else { self?.count(\.staleOrDuplicateDeliveryRejections); return }
             self?.count(\.acceptedDeliveries)
+            fronted?(observation)
             // A thread passed through on the way to another one is not a visit.
             // Record only if the same route is still in front after the dwell.
             DispatchQueue.main.asyncAfter(deadline: .now() + CodexDesktopObservationGate.minimumDwell) { [weak self] in

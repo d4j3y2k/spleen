@@ -30,6 +30,32 @@ final class RelevanceTests: XCTestCase {
         XCTAssertEqual(snapshot.previews[excluded.conversationKey], ConversationPreview())
     }
 
+    func testFrontedConversationIsCurrentUntilANewerInteractionIsRecorded() throws {
+        let a = Destination(title: "Codex A", threadID: "thr_fronted_a")
+        let b = Destination(title: "Codex B", threadID: "thr_fronted_b")
+        let claude = Destination(title: "Claude chat", threadID: "desktop-code:local_01234567-89ab-cdef-0123-456789abcdef", provider: .claude)
+        var state = SavedState(); state.destinations = [a, b, claude]
+        var context = ContextMemory()
+        context.record(ContextEvent(key: a.conversationKey, kind: .spleenDispatch, observedAt: now.addingTimeInterval(-120), source: "spleen", evidence: .spleenInteraction), now: now)
+        context.record(ContextEvent(key: b.conversationKey, kind: .spleenDispatch, observedAt: now.addingTimeInterval(-10), source: "spleen", evidence: .spleenInteraction), now: now)
+        // Returned to the Claude chat by hand; its visit dwell has not elapsed.
+        context.foreground = ForegroundHint(key: claude.conversationKey, at: now.addingTimeInterval(-1))
+        let fronted = RelevanceSnapshot(state: state, catalog: CatalogCache(), context: context, now: now)
+        XCTAssertEqual(fronted.currentKey, claude.conversationKey)
+        XCTAssertEqual(fronted.previousKey, b.conversationKey)
+        XCTAssertEqual(fronted.ordered.first, b, "the thread just left is the return target, not hidden as current")
+        XCTAssertEqual(fronted.ordered.last, claude)
+        XCTAssertTrue(fronted.subtitles[claude.conversationKey]?.hasSuffix("In front") == true, fronted.subtitles[claude.conversationKey] ?? "nil")
+        // A foreground report older than the newest interaction is stale.
+        context.foreground = ForegroundHint(key: claude.conversationKey, at: now.addingTimeInterval(-30))
+        XCTAssertEqual(RelevanceSnapshot(state: state, catalog: CatalogCache(), context: context, now: now).currentKey, b.conversationKey)
+        // Placement only: never persisted, never an interaction.
+        context.foreground = ForegroundHint(key: claude.conversationKey, at: now)
+        XCTAssertNil(try JSONDecoder().decode(ContextMemory.self, from: JSONEncoder().encode(context)).foreground)
+        XCTAssertEqual(context.currentHint(at: now)?.key, b.conversationKey)
+        XCTAssertEqual(context.recentInteractions(at: now).map(\.key), [a.conversationKey, b.conversationKey])
+    }
+
     func testTopicEvidenceChangesRelevanceWithoutChangingPinsOrLabels() throws {
         var state = SavedState()
         state.destinations = [Destination(title: "Pinned reference", threadID: "thr_pinned_123", pinned: true),

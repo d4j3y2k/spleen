@@ -40,6 +40,9 @@ final class ClaudeDesktopObserver {
 
     private let queue = DispatchQueue(label: "spleen.claude-observation", qos: .utility)
     private let queueKey = DispatchSpecificKey<Bool>()
+    /// Fired as soon as a supported route is accepted in front, before the visit dwell.
+    /// Placement only: the receiver must not record it as a visit.
+    private let onForeground: ((ClaudeDesktopObservation) -> Void)?
     private let onObservation: (ClaudeDesktopObservation) -> Void
     private let diagnosticsEnabled: Bool
     private var statistics: Diagnostics
@@ -54,7 +57,9 @@ final class ClaudeDesktopObserver {
     private let gate = ClaudeDesktopObservationGate()
     private static let bundleID = "com.anthropic.claudefordesktop"
 
-    init(diagnosticsEnabled: Bool = false, onObservation: @escaping (ClaudeDesktopObservation) -> Void) {
+    init(diagnosticsEnabled: Bool = false, onForeground: ((ClaudeDesktopObservation) -> Void)? = nil,
+         onObservation: @escaping (ClaudeDesktopObservation) -> Void) {
+        self.onForeground = onForeground
         self.onObservation = onObservation
         self.diagnosticsEnabled = diagnosticsEnabled
         statistics = Diagnostics(enabled: diagnosticsEnabled)
@@ -244,7 +249,7 @@ final class ClaudeDesktopObserver {
                 if let url, let observation = ClaudeDesktopObservation(url: url, title: title), mayRead(ticket, before: deadline) {
                     count(\.metadataParsed)
                     let gate = self.gate
-                    let callback = onObservation
+                    let callback = onObservation, fronted = onForeground
                     DispatchQueue.main.async { [weak self] in
                         guard Self.isTrusted else {
                             self?.count(\.permissionFailures)
@@ -256,6 +261,7 @@ final class ClaudeDesktopObserver {
                               app.isActive, app.bundleIdentifier == Self.bundleID else { self?.count(\.foregroundDeliveryRejections); return }
                         guard gate.acceptDelivery(observation, for: ticket) else { self?.count(\.staleOrDuplicateDeliveryRejections); return }
                         self?.count(\.acceptedDeliveries)
+                        fronted?(observation)
                         // A chat passed through on the way to another one is not a visit.
                         // Record only if the same route is still in front after the dwell.
                         DispatchQueue.main.asyncAfter(deadline: .now() + ClaudeDesktopObservationGate.minimumDwell) { [weak self] in

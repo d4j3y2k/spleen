@@ -243,13 +243,19 @@ public struct RelevanceSnapshot: Equatable {
         let activeRow = matched ?? (hint == nil ? recent.max {
             ($0.destination.lastOpenedAt ?? .distantPast) < ($1.destination.lastOpenedAt ?? .distantPast)
         } : nil)
-        let currentKey = hint?.key ?? activeRow?.destination.conversationKey
-        self.currentKey = currentKey
-        let previousKey = hint != nil ? context.previousDistinct(at: now)?.key : recent.filter {
-            $0.destination.conversationKey != currentKey
+        let recordedCurrent = hint?.key ?? activeRow?.destination.conversationKey
+        let recordedPrevious = hint != nil ? context.previousDistinct(at: now)?.key : recent.filter {
+            $0.destination.conversationKey != recordedCurrent
         }.max {
             ($0.destination.lastOpenedAt ?? .distantPast) < ($1.destination.lastOpenedAt ?? .distantPast)
         }?.destination.conversationKey
+        // A conversation seen in front before its visit dwell is current for placement,
+        // so the one just left stays a return target instead of being hidden as current.
+        let resolved = ContextMemory.resolveCurrent(recorded: recordedCurrent, recordedAt: hint?.observedAt ?? activeRow?.destination.lastOpenedAt,
+            previous: recordedPrevious, foreground: context.foreground, at: now)
+        let currentKey = resolved.current, previousKey = resolved.previous
+        let frontedCurrent = currentKey != nil && currentKey != recordedCurrent
+        self.currentKey = currentKey
         self.previousKey = previousKey
         let contextTerms = (activeRow?.terms ?? []).union(TextIndex.terms(hint?.topic ?? ""))
         func absoluteProject(_ value: String?) -> String? {
@@ -388,7 +394,7 @@ public struct RelevanceSnapshot: Equatable {
             let reason: String
             if item.pinned { reason = "Pinned" }
             else if item.conversationKey == visitedKey { reason = "Recently visited" }
-            else if item.conversationKey == currentKey { reason = "Last selected" }
+            else if item.conversationKey == currentKey { reason = frontedCurrent ? "In front" : "Last selected" }
             else if item.conversationKey == activityKey { reason = "Latest activity" }
             else if item.conversationKey == previousKey { reason = "Previous conversation" }
             else if let selectedAt = row.selectedAt, now.timeIntervalSince(selectedAt) <= 1800 { reason = "Recently selected" }

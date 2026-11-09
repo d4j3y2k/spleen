@@ -89,6 +89,18 @@ func runReturnReadinessTests() -> (passed: Int, failures: [String]) {
         model.endPresentation(); clock.advance(); model.acceptedDispatch(b.id); model.prepare()
         check(model.compassItems.first?.id == claude.id, "Claude to Codex immediately offers the prior Claude session")
         check(wait { !model.indexing }, "cross-app return fixture settles")
+        // Returning to Claude by hand and opening within the visit dwell: the fronted
+        // chat is already current, so the just-left Codex thread stays centered and
+        // the fronted chat does not take a quick-return slot. No visit is recorded.
+        model.endPresentation(); clock.advance(); model.receiveForeground(claude.conversationKey); model.prepare()
+        check(model.compassItems.first?.id == b.id, "fronted Claude chat within the dwell centers the just-left Codex thread")
+        check(!model.compassItems.prefix(2).contains(where: { $0.id == claude.id }), "fronted chat does not take a quick-return slot before its visit is recorded")
+        check(model.context.currentHint(at: clock.wall)?.key == b.conversationKey, "a foreground report alone records no interaction")
+        check(wait { !model.indexing }, "foreground fixture settles")
+        let settled = model.compassItems.map(\.id)
+        check((settled.firstIndex(of: b.id) ?? 9) < (settled.firstIndex(of: a.id) ?? 9),
+            "just-left Codex thread outranks the older interaction once the snapshot settles: \(model.compassItems.map(\.title))")
+        check(model.compassItems.last?.id == claude.id, "fronted chat ranks last once the snapshot settles, still without a recorded visit")
         model.endPresentation()
 
         let staleDirectory = root.appendingPathComponent("stale-read")

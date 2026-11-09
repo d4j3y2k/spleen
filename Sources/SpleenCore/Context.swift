@@ -68,6 +68,15 @@ public struct ContextTransition: Equatable {
 
 public enum ContextStoreError: Error { case invalidStore }
 
+/// An observer's immediate report that a conversation came to the front, made before
+/// its visit dwell elapses. Placement only: never persisted, never an interaction,
+/// visit or transition.
+public struct ForegroundHint: Equatable {
+    public let key: ConversationKey
+    public let at: Date
+    public init(key: ConversationKey, at: Date) { self.key = key; self.at = at }
+}
+
 /// Pure, bounded local state. No app inspection, hook installation, or network work.
 public struct ContextMemory: Codable {
     public static let schemaVersion = 1
@@ -75,6 +84,19 @@ public struct ContextMemory: Codable {
     public static let retention: TimeInterval = 30 * 24 * 60 * 60
     public static let hintLifetime: TimeInterval = 30 * 60
     public private(set) var recentsEnabled: Bool
+    /// Transient. Not encoded; set by the app on the copy it hands to a snapshot build.
+    public var foreground: ForegroundHint?
+
+    /// Where the user is now. A fresh foreground report that is newer than every
+    /// recorded interaction wins over the recorded conversation, which then becomes
+    /// the quick-return target. Once its own visit, or any later interaction, is
+    /// recorded, the recorded state wins again.
+    public static func resolveCurrent(recorded: ConversationKey?, recordedAt: Date?, previous: ConversationKey?,
+                                      foreground: ForegroundHint?, at now: Date) -> (current: ConversationKey?, previous: ConversationKey?) {
+        guard let foreground, foreground.at <= now, now.timeIntervalSince(foreground.at) < hintLifetime,
+              foreground.at >= (recordedAt ?? .distantPast), foreground.key != recorded else { return (recorded, previous) }
+        return (foreground.key, recorded ?? previous)
+    }
     public private(set) var events: [ContextEvent] = []
     // Consecutive repetitions collapse; revisiting A after B remains a real transition.
     private var interactions: [ContextHint] = []

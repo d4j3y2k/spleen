@@ -75,6 +75,11 @@ final class AppModel: ObservableObject {
         }
     }
     private var immediateReturn: ImmediateReturn?
+    /// The conversation an observer last saw in front, reported before its visit
+    /// dwell. Placement only: it is never persisted and never counts as a visit.
+    private var observedForeground: ForegroundHint?
+    /// The memory a snapshot build sees: recorded state plus the transient foreground.
+    private var snapshotContext: ContextMemory { var memory = context; memory.foreground = observedForeground; return memory }
     private var openingRefinementGeneration: Int?
     private var visibleInitialReturnKey: ConversationKey?
     private let now: () -> Date
@@ -333,6 +338,19 @@ final class AppModel: ObservableObject {
         updateReady = false
         return true
     }
+    /// An observer saw this conversation come to the front. Opening Spleen before its
+    /// visit dwell elapses must still treat it as current, so the conversation just
+    /// left stays in the quick-return slot instead of being hidden as "current".
+    func receiveForeground(_ key: ConversationKey) {
+        guard !loadFailed, state.rememberRecents else { return }
+        let instant = now()
+        observedForeground = ForegroundHint(key: key, at: instant)
+        let hint = context.currentHint(at: instant)
+        let resolved = ContextMemory.resolveCurrent(recorded: hint?.key, recordedAt: hint?.observedAt,
+            previous: context.previousDistinct(at: instant)?.key, foreground: observedForeground, at: instant)
+        prepareImmediateReturn(order: preparedOrder, current: resolved.current, previous: resolved.previous, at: instant)
+        rebuildSnapshot()
+    }
     private func prepareImmediateReturn(order: [Destination], current: ConversationKey?, previous: ConversationKey?, at instant: Date) {
         immediateReturn = nil
         guard state.rememberRecents, let current, let previous, previous != current,
@@ -446,7 +464,7 @@ final class AppModel: ObservableObject {
         self.attention.assessments = Dictionary(uniqueKeysWithValues: self.attention.windows.values.compactMap { window in
             assessmentCache[window.contentVersion].map { (window.key, $0) }
         })
-        let generation = relevance.begin(), state = state, catalog = catalog, notes = insights.entries, memory = context, attention = attention
+        let generation = relevance.begin(), state = state, catalog = catalog, notes = insights.entries, memory = snapshotContext, attention = attention
         let builtAt = now(), builtUptime = uptime()
         contextSignature = ContextRelevanceSignature(memory, now: builtAt)
         let usesRanking = rankingTransport != nil && !navigationFirst
@@ -458,9 +476,12 @@ final class AppModel: ObservableObject {
             let prepared = builder(state, catalog, notes, memory, builtAt, builtUptime, attention)
             guard isCurrent() else { return }
             let snapshot = prepared.contextual
-            let navigationCurrent = prepared.recentSessions.entries.first(where: { $0.interaction.kind != .creation }).flatMap { entry in
+            let newest = prepared.recentSessions.entries.first(where: { $0.interaction.kind != .creation })
+            let recordedCurrent = newest.flatMap { entry in
                 builtAt.timeIntervalSince(entry.interaction.date) < ContextMemory.hintLifetime ? entry.destination.conversationKey : nil
             }
+            let navigationCurrent = ContextMemory.resolveCurrent(recorded: recordedCurrent, recordedAt: newest?.interaction.date,
+                previous: nil, foreground: memory.foreground, at: builtAt).current
             let navigation = NavigationCompass(state: state, catalog: catalog, context: memory, currentKey: navigationCurrent, now: builtAt, uptime: builtUptime)
             let neutralNavigation = NavigationCompass(state: state, catalog: catalog, context: memory, now: builtAt, uptime: builtUptime)
             let input = usesRanking ? RankingInput(baseline: snapshot.ordered, context: memory, catalog: catalog, insights: notes, now: builtAt, excludingCurrent: snapshot.currentKey) : nil
@@ -476,9 +497,11 @@ final class AppModel: ObservableObject {
                 if self.rankingInput?.key != input?.key { self.invalidateRanking(); self.readyRankingExpiresAt = 0 }
                 self.rankingInput = input
                 self.readyOrder = input.map { self.ranking.snapshot(baseline: snapshot.ordered, input: $0, now: self.uptime()) } ?? snapshot.ordered
-                let openingSnapshot = self.preparedSnapshot
-                self.prepareImmediateReturn(order: self.preparedOrder, current: openingSnapshot.currentKey,
-                    previous: openingSnapshot.previousKey, at: self.now())
+                let openingSnapshot = self.preparedSnapshot, instant = self.now()
+                let resolved = ContextMemory.resolveCurrent(recorded: openingSnapshot.currentKey,
+                    recordedAt: self.context.currentHint(at: instant)?.observedAt, previous: openingSnapshot.previousKey,
+                    foreground: self.observedForeground, at: instant)
+                self.prepareImmediateReturn(order: self.preparedOrder, current: resolved.current, previous: resolved.previous, at: instant)
                 // First discovery may arrive after an empty cached index has already completed.
                 // Filling an untouched empty invocation cannot move an existing choice or typed search.
                 let emptyPresentation = self.isPresented && self.visibleOrder?.isEmpty == true && self.results.isEmpty &&
@@ -1039,7 +1062,7 @@ final class AppModel: ObservableObject {
                 context.setRecentsEnabled(next.rememberRecents)
                 let enabled = next.rememberRecents, url = contextURL
                 contextQueue.async { _ = try? ContextRepository(url: url).setRecentsEnabled(enabled, clear: !enabled) }
-                if !enabled { clearClaudeReplyTimes() }
+                if !enabled { clearClaudeReplyTimes(); observedForeground = nil }
                 let newlyEnabledClaude = observeClaudeDraft && !observesClaude
                 navigationFirst = navigationFirstDraft
                 immediateReturn = nil
@@ -1159,7 +1182,10 @@ final class AppModel: ObservableObject {
             return
         }
         if codexObserver == nil {
-            codexObserver = CodexDesktopObserver { [weak self] observation in
+            codexObserver = CodexDesktopObserver(onForeground: { [weak self] observation in
+                guard let self, self.observesCodex else { return }
+                self.receiveForeground(observation.key)
+            }) { [weak self] observation in
                 guard let self, !self.loadFailed, self.observesCodex, self.state.rememberRecents else { return }
                 // An exact route establishes a visit, not working/finished/read status.
                 let event = ContextEvent(key: observation.key, topic: observation.title, kind: .selectedConversation,
@@ -1188,7 +1214,10 @@ final class AppModel: ObservableObject {
             return
         }
         if claudeObserver == nil {
-            claudeObserver = ClaudeDesktopObserver { [weak self] observation in
+            claudeObserver = ClaudeDesktopObserver(onForeground: { [weak self] observation in
+                guard let self, self.observesClaude else { return }
+                self.receiveForeground(observation.key)
+            }) { [weak self] observation in
                 guard let self, !self.loadFailed, self.observesClaude, self.state.rememberRecents else { return }
                 self.contextReadGeneration += 1
                 let event = ContextEvent(key: observation.key, topic: observation.title, kind: .selectedConversation,
