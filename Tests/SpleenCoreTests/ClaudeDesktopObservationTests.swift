@@ -101,6 +101,56 @@ final class ClaudeDesktopObservationTests: XCTestCase {
         XCTAssertFalse(gate.acceptDelivery(renamed, for: current))
     }
 
+    func testDwellCommitsOnlyWhileTheSameRouteStaysInFront() throws {
+        let a = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + id, title: "A"))
+        let b = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + UUID().uuidString.lowercased(), title: "B"))
+        XCTAssertEqual(ClaudeDesktopObservationGate.minimumDwell, 2, accuracy: 0.001)
+
+        // Staying on one chat: exactly one commit, and repeated reads do not restart it.
+        var gate = ClaudeDesktopObservationGate()
+        var ticket = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(a, for: ticket))
+        let again = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(again))
+        XCTAssertFalse(gate.acceptDelivery(a, for: again))
+        XCTAssertEqual(gate.commitDwell(a, for: ticket), a)
+        XCTAssertNil(gate.commitDwell(a, for: ticket), "A visit is recorded once per arrival")
+
+        // Passing through A to B within the dwell records only B.
+        gate = ClaudeDesktopObservationGate()
+        ticket = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(a, for: ticket))
+        let next = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(next))
+        XCTAssertTrue(gate.acceptDelivery(b, for: next))
+        XCTAssertNil(gate.commitDwell(a, for: ticket), "A one-second stop is not a visit")
+        XCTAssertEqual(gate.commitDwell(b, for: next), b)
+
+        // Leaving Claude during the dwell abandons the pending visit.
+        gate = ClaudeDesktopObservationGate()
+        ticket = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(a, for: ticket))
+        gate.invalidate()
+        XCTAssertNil(gate.commitDwell(a, for: ticket))
+        // Returning afterwards starts a fresh dwell for the same chat.
+        let returned = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(returned))
+        XCTAssertTrue(gate.acceptDelivery(a, for: returned))
+        XCTAssertEqual(gate.commitDwell(a, for: returned), a)
+    }
+
+    func testTitleThatSettlesDuringDwellReplacesTheBareAppName() throws {
+        let bare = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + id, title: "Claude"))
+        let settled = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + id, title: "Real topic - Claude"))
+        let renamed = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + id, title: "Renamed - Claude"))
+        let gate = ClaudeDesktopObservationGate()
+        let ticket = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(bare, for: ticket))
+        let later = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(later))
+        XCTAssertFalse(gate.acceptDelivery(settled, for: later), "A settled title is not a new navigation")
+        XCTAssertEqual(gate.commitDwell(bare, for: ticket)?.title, "Real topic")
+        let afterwards = try XCTUnwrap(gate.requestRead()); XCTAssertTrue(gate.beginRead(afterwards))
+        XCTAssertFalse(gate.acceptDelivery(renamed, for: afterwards))
+        XCTAssertNil(gate.commitDwell(renamed, for: afterwards), "A rename after the visit is recorded does not add a visit")
+    }
+
     func testDroppedDeliveryDoesNotSuppressLaterMatchingObservation() throws {
         let observation = try XCTUnwrap(ClaudeDesktopObservation(url: "claude.ai/chat/" + id, title: "A"))
         let gate = ClaudeDesktopObservationGate()

@@ -29,6 +29,8 @@ final class ClaudeDesktopObserver {
         var webAreasFound = 0
         var metadataParsed = 0
         var acceptedDeliveries = 0
+        var dwellCommits = 0
+        var dwellAbandonments = 0
         var foregroundDeliveryRejections = 0
         var staleOrDuplicateDeliveryRejections = 0
         var permissionFailures = 0
@@ -254,7 +256,15 @@ final class ClaudeDesktopObserver {
                               app.isActive, app.bundleIdentifier == Self.bundleID else { self?.count(\.foregroundDeliveryRejections); return }
                         guard gate.acceptDelivery(observation, for: ticket) else { self?.count(\.staleOrDuplicateDeliveryRejections); return }
                         self?.count(\.acceptedDeliveries)
-                        callback(observation)
+                        // A chat passed through on the way to another one is not a visit.
+                        // Record only if the same route is still in front after the dwell.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + ClaudeDesktopObservationGate.minimumDwell) { [weak self] in
+                            guard Self.isTrusted, let app = NSRunningApplication(processIdentifier: pid),
+                                  app.isActive, app.bundleIdentifier == Self.bundleID,
+                                  let settled = gate.commitDwell(observation, for: ticket) else { self?.count(\.dwellAbandonments); return }
+                            self?.count(\.dwellCommits)
+                            callback(settled)
+                        }
                     }
                     return
                 }

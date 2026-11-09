@@ -64,10 +64,15 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
         fileprivate let request: UUID
     }
 
+    /// A route must stay in front this long before it counts as a visit. Passing
+    /// through a chat on the way to another one is navigation noise, not a return target.
+    public static let minimumDwell: TimeInterval = 2
+
     private let lock = NSLock()
     private var generation = UUID()
     private var pending: Ticket?
     private var delivered: ClaudeDesktopObservation?
+    private var committed = false
     private var latestStarted: Ticket?
 
     public init() {}
@@ -75,7 +80,7 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
     /// Call immediately on activation changes, stop, detach, or lost permission.
     public func invalidate() {
         lock.lock(); defer { lock.unlock() }
-        generation = UUID(); pending = nil; delivered = nil; latestStarted = nil
+        generation = UUID(); pending = nil; delivered = nil; committed = false; latestStarted = nil
     }
 
     public func requestRead() -> Ticket? {
@@ -100,10 +105,28 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
     }
 
     /// Call only after checking foreground state and permission on the delivery queue.
+    /// True starts a dwell for a newly fronted route; the visit is not recorded yet.
     public func acceptDelivery(_ observation: ClaudeDesktopObservation, for ticket: Ticket) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard ticket.generation == generation, latestStarted == ticket, delivered?.key != observation.key else { return false }
-        delivered = observation
+        guard ticket.generation == generation, latestStarted == ticket else { return false }
+        if delivered?.key == observation.key {
+            // The page title often settles after the route. Keep the latest title for
+            // the pending commit; a rename after commit is not a user navigation.
+            if !committed, delivered != observation { delivered = observation }
+            return false
+        }
+        delivered = observation; committed = false
         return true
+    }
+
+    /// Call once `minimumDwell` has elapsed since the matching acceptDelivery, after
+    /// rechecking foreground state and permission. Returns the observation to record,
+    /// with any title that settled during the dwell, or nil when an activation change
+    /// or a newer route intervened, or the route was already committed.
+    public func commitDwell(_ observation: ClaudeDesktopObservation, for ticket: Ticket) -> ClaudeDesktopObservation? {
+        lock.lock(); defer { lock.unlock() }
+        guard ticket.generation == generation, !committed, let delivered, delivered.key == observation.key else { return nil }
+        committed = true
+        return delivered
     }
 }

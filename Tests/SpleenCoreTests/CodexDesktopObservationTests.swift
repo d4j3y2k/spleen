@@ -28,6 +28,41 @@ final class CodexDesktopObservationTests: XCTestCase {
         let returned = gate.requestRead()!; XCTAssertTrue(gate.beginRead(returned))
         XCTAssertTrue(gate.acceptDelivery(observation(), for: returned))
     }
+    func testDwellCommitsOnlyWhileTheSameRouteStaysInFront() {
+        let other = CodexDesktopObservation(url: "app://-/local/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", title: "Other - ChatGPT")!
+        XCTAssertEqual(CodexDesktopObservationGate.minimumDwell, ClaudeDesktopObservationGate.minimumDwell)
+
+        // Staying: one commit, and a title that settles during the dwell is used.
+        var gate = CodexDesktopObservationGate()
+        var ticket = gate.requestRead()!; XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(observation("ChatGPT"), for: ticket))
+        let settled = gate.requestRead()!; XCTAssertTrue(gate.beginRead(settled))
+        XCTAssertFalse(gate.acceptDelivery(observation(), for: settled))
+        XCTAssertEqual(gate.commitDwell(observation("ChatGPT"), for: ticket)?.title, "Task")
+        XCTAssertNil(gate.commitDwell(observation(), for: ticket), "A visit is recorded once per arrival")
+        let renamed = gate.requestRead()!; XCTAssertTrue(gate.beginRead(renamed))
+        XCTAssertFalse(gate.acceptDelivery(observation("Renamed"), for: renamed))
+        XCTAssertNil(gate.commitDwell(observation("Renamed"), for: renamed))
+
+        // Passing through to another thread within the dwell records only the destination.
+        gate = CodexDesktopObservationGate()
+        ticket = gate.requestRead()!; XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(observation(), for: ticket))
+        let next = gate.requestRead()!; XCTAssertTrue(gate.beginRead(next))
+        XCTAssertTrue(gate.acceptDelivery(other, for: next))
+        XCTAssertNil(gate.commitDwell(observation(), for: ticket), "A one-second stop is not a visit")
+        XCTAssertEqual(gate.commitDwell(other, for: next), other)
+
+        // Leaving Codex during the dwell abandons it; returning starts a fresh one.
+        gate = CodexDesktopObservationGate()
+        ticket = gate.requestRead()!; XCTAssertTrue(gate.beginRead(ticket))
+        XCTAssertTrue(gate.acceptDelivery(observation(), for: ticket))
+        gate.invalidate()
+        XCTAssertNil(gate.commitDwell(observation(), for: ticket))
+        let returned = gate.requestRead()!; XCTAssertTrue(gate.beginRead(returned))
+        XCTAssertTrue(gate.acceptDelivery(observation(), for: returned))
+        XCTAssertEqual(gate.commitDwell(observation(), for: returned), observation())
+    }
     func testStaleActivationAndOvertakenReadCannotDeliver() {
         let gate = CodexDesktopObservationGate()
         let old = gate.requestRead()!; XCTAssertTrue(gate.beginRead(old))
