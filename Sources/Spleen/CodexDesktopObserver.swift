@@ -63,7 +63,7 @@ final class CodexDesktopObserver {
     private var exposureRetry = AccessibilityExposureRetry()
     private var registeredNotifications: [CFString] = []
     private let gate = CodexDesktopObservationGate()
-    private static let bundleID = "com.openai.codex"
+    static let bundleID = "com.openai.codex"
 
     init(diagnosticsEnabled: Bool = false, onForeground: ((CodexDesktopObservation) -> Void)? = nil,
          onObservation: @escaping (CodexDesktopObservation) -> Void) {

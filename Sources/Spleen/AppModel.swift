@@ -78,8 +78,13 @@ final class AppModel: ObservableObject {
     /// The conversation an observer last saw in front, reported before its visit
     /// dwell. Placement only: it is never persisted and never counts as a visit.
     private var observedForeground: ForegroundHint?
-    /// The memory a snapshot build sees: recorded state plus the transient foreground.
-    private var snapshotContext: ContextMemory { var memory = context; memory.foreground = observedForeground; return memory }
+    /// Which application is in front, by bundle identifier only. Never stored.
+    private var frontApplication: FrontApplication?
+    private var frontApplicationToken: NSObjectProtocol?
+    /// The memory a snapshot build sees: recorded state plus the transient placement hints.
+    private var snapshotContext: ContextMemory {
+        var memory = context; memory.foreground = observedForeground; memory.frontApplication = frontApplication; return memory
+    }
     private var openingRefinementGeneration: Int?
     private var visibleInitialReturnKey: ConversationKey?
     private let now: () -> Date
@@ -90,7 +95,9 @@ final class AppModel: ObservableObject {
             let instant = now()
             let newest = readyRecents.visibleEntries(now: instant, uptime: uptime()).first
             let hasFreshSelection = newest.map { instant.timeIntervalSince($0.interaction.date) < ContextMemory.hintLifetime } ?? false
-            let navigation = hasFreshSelection ? readyNavigation : readyNavigationNeutral
+            // A conversation cannot be current while its application is not in front.
+            let stale = readyNavigation.currentKey.map { key in frontApplication.map { $0 != .provider(key.provider) } ?? false } ?? false
+            let navigation = hasFreshSelection && !stale ? readyNavigation : readyNavigationNeutral
             return navigation.visibleEntries(now: now(), uptime: uptime(), limit: ContextMemory.maximumEvents).map(\.destination)
         }
         return preparedContext.isFresh(now: now(), uptime: uptime()) && uptime() < readyRankingExpiresAt
@@ -345,11 +352,40 @@ final class AppModel: ObservableObject {
         guard !loadFailed, state.rememberRecents else { return }
         let instant = now()
         observedForeground = ForegroundHint(key: key, at: instant)
-        let hint = context.currentHint(at: instant)
-        let resolved = ContextMemory.resolveCurrent(recorded: hint?.key, recordedAt: hint?.observedAt,
-            previous: context.previousDistinct(at: instant)?.key, foreground: observedForeground, at: instant)
-        prepareImmediateReturn(order: preparedOrder, current: resolved.current, previous: resolved.previous, at: instant)
+        frontApplication = .provider(key.provider)
+        refreshImmediateReturn(at: instant)
         rebuildSnapshot()
+    }
+    /// Which application is in front, from its bundle identifier only. Never stored.
+    /// Switching apps by hand is not observed as a conversation, so without this a
+    /// Claude chat would stay "current", and hidden, while Codex is in front.
+    func receiveFrontApplication(_ front: FrontApplication?) {
+        guard let front, front != frontApplication else { return }
+        frontApplication = front
+        guard !loadFailed, state.rememberRecents else { return }
+        refreshImmediateReturn(at: now())
+        rebuildSnapshot()
+    }
+    static func frontApplication(for bundleIdentifier: String?) -> FrontApplication? {
+        guard let bundleIdentifier, bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
+        if bundleIdentifier == ClaudeDesktopObserver.bundleID { return .provider(.claude) }
+        if bundleIdentifier == CodexDesktopObserver.bundleID { return .provider(.codex) }
+        return .other
+    }
+    /// App start only; tests call receiveFrontApplication directly.
+    func startFrontApplicationTracking() {
+        receiveFrontApplication(Self.frontApplication(for: NSWorkspace.shared.frontmostApplication?.bundleIdentifier))
+        frontApplicationToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            self?.receiveFrontApplication(Self.frontApplication(for: app?.bundleIdentifier))
+        }
+    }
+    private func refreshImmediateReturn(at instant: Date) {
+        let snapshot = preparedSnapshot
+        let resolved = ContextMemory.resolveCurrent(recorded: snapshot.currentKey, recordedAt: context.currentHint(at: instant)?.observedAt,
+            previous: snapshot.previousKey, foreground: observedForeground, front: frontApplication, at: instant)
+        prepareImmediateReturn(order: preparedOrder, current: resolved.current, previous: resolved.previous, at: instant)
     }
     private func prepareImmediateReturn(order: [Destination], current: ConversationKey?, previous: ConversationKey?, at instant: Date) {
         immediateReturn = nil
@@ -481,7 +517,7 @@ final class AppModel: ObservableObject {
                 builtAt.timeIntervalSince(entry.interaction.date) < ContextMemory.hintLifetime ? entry.destination.conversationKey : nil
             }
             let navigationCurrent = ContextMemory.resolveCurrent(recorded: recordedCurrent, recordedAt: newest?.interaction.date,
-                previous: nil, foreground: memory.foreground, at: builtAt).current
+                previous: nil, foreground: memory.foreground, front: memory.frontApplication, at: builtAt).current
             let navigation = NavigationCompass(state: state, catalog: catalog, context: memory, currentKey: navigationCurrent, now: builtAt, uptime: builtUptime)
             let neutralNavigation = NavigationCompass(state: state, catalog: catalog, context: memory, now: builtAt, uptime: builtUptime)
             let input = usesRanking ? RankingInput(baseline: snapshot.ordered, context: memory, catalog: catalog, insights: notes, now: builtAt, excludingCurrent: snapshot.currentKey) : nil
@@ -497,11 +533,7 @@ final class AppModel: ObservableObject {
                 if self.rankingInput?.key != input?.key { self.invalidateRanking(); self.readyRankingExpiresAt = 0 }
                 self.rankingInput = input
                 self.readyOrder = input.map { self.ranking.snapshot(baseline: snapshot.ordered, input: $0, now: self.uptime()) } ?? snapshot.ordered
-                let openingSnapshot = self.preparedSnapshot, instant = self.now()
-                let resolved = ContextMemory.resolveCurrent(recorded: openingSnapshot.currentKey,
-                    recordedAt: self.context.currentHint(at: instant)?.observedAt, previous: openingSnapshot.previousKey,
-                    foreground: self.observedForeground, at: instant)
-                self.prepareImmediateReturn(order: self.preparedOrder, current: resolved.current, previous: resolved.previous, at: instant)
+                self.refreshImmediateReturn(at: self.now())
                 // First discovery may arrive after an empty cached index has already completed.
                 // Filling an untouched empty invocation cannot move an existing choice or typed search.
                 let emptyPresentation = self.isPresented && self.visibleOrder?.isEmpty == true && self.results.isEmpty &&

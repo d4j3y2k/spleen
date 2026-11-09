@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                  return try CodexDesktopReadStateClient().read(keys: keys, observedAt: instant, sequence: sequence, epoch: epoch).states
                              })
         controller = PanelController(model: model)
+        model.startFrontApplicationTracking()
         hotkey = HotKey()
         hotkey.onPress = { [weak self] in trace("hotkey.received"); self?.controller.toggle() }
         model.changeShortcut = { [weak self] shortcut in try self?.hotkey.register(shortcut) }

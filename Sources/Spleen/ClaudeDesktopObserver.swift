@@ -55,7 +55,7 @@ final class ClaudeDesktopObserver {
     private var processID: pid_t?
     private var registeredNotifications: [CFString] = []
     private let gate = ClaudeDesktopObservationGate()
-    private static let bundleID = "com.anthropic.claudefordesktop"
+    static let bundleID = "com.anthropic.claudefordesktop"
 
     init(diagnosticsEnabled: Bool = false, onForeground: ((ClaudeDesktopObservation) -> Void)? = nil,
          onObservation: @escaping (ClaudeDesktopObservation) -> Void) {

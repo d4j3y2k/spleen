@@ -252,7 +252,7 @@ public struct RelevanceSnapshot: Equatable {
         // A conversation seen in front before its visit dwell is current for placement,
         // so the one just left stays a return target instead of being hidden as current.
         let resolved = ContextMemory.resolveCurrent(recorded: recordedCurrent, recordedAt: hint?.observedAt ?? activeRow?.destination.lastOpenedAt,
-            previous: recordedPrevious, foreground: context.foreground, at: now)
+            previous: recordedPrevious, foreground: context.foreground, front: context.frontApplication, at: now)
         let currentKey = resolved.current, previousKey = resolved.previous
         let frontedCurrent = currentKey != nil && currentKey != recordedCurrent
         self.currentKey = currentKey

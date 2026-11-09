@@ -46,12 +46,32 @@ final class RelevanceTests: XCTestCase {
         XCTAssertEqual(fronted.ordered.first, b, "the thread just left is the return target, not hidden as current")
         XCTAssertEqual(fronted.ordered.last, claude)
         XCTAssertTrue(fronted.subtitles[claude.conversationKey]?.hasSuffix("In front") == true, fronted.subtitles[claude.conversationKey] ?? "nil")
+        // Another application in front: nothing is current, and the chat that would
+        // have been hidden becomes the return target instead.
+        context.frontApplication = .other
+        let elsewhere = RelevanceSnapshot(state: state, catalog: CatalogCache(), context: context, now: now)
+        XCTAssertNil(elsewhere.currentKey)
+        XCTAssertEqual(elsewhere.previousKey, claude.conversationKey)
+        XCTAssertTrue(elsewhere.subtitles[claude.conversationKey]?.hasSuffix("Previous conversation") == true, elsewhere.subtitles[claude.conversationKey] ?? "nil")
+        XCTAssertEqual(elsewhere.ordered.filter { $0.provider == .codex }, [b, a], "the recorded Codex order is unchanged")
+        // Visited a Claude chat, then switched to Codex by hand with no Codex observation:
+        // the Claude chat is not current, and is the return target instead of hidden.
+        let visited = ContextMemory.resolveCurrent(recorded: claude.conversationKey, recordedAt: now.addingTimeInterval(-600),
+            previous: b.conversationKey, foreground: nil, front: .provider(.codex), at: now)
+        XCTAssertNil(visited.current); XCTAssertEqual(visited.previous, claude.conversationKey)
+        XCTAssertEqual(ContextMemory.resolveCurrent(recorded: claude.conversationKey, recordedAt: now.addingTimeInterval(-600),
+            previous: b.conversationKey, foreground: nil, front: .provider(.claude), at: now).current, claude.conversationKey)
+        context.frontApplication = .provider(.claude)
+        XCTAssertEqual(RelevanceSnapshot(state: state, catalog: CatalogCache(), context: context, now: now).currentKey, claude.conversationKey)
+        context.frontApplication = nil
         // A foreground report older than the newest interaction is stale.
         context.foreground = ForegroundHint(key: claude.conversationKey, at: now.addingTimeInterval(-30))
         XCTAssertEqual(RelevanceSnapshot(state: state, catalog: CatalogCache(), context: context, now: now).currentKey, b.conversationKey)
         // Placement only: never persisted, never an interaction.
         context.foreground = ForegroundHint(key: claude.conversationKey, at: now)
-        XCTAssertNil(try JSONDecoder().decode(ContextMemory.self, from: JSONEncoder().encode(context)).foreground)
+        context.frontApplication = .provider(.codex)
+        let decoded = try JSONDecoder().decode(ContextMemory.self, from: JSONEncoder().encode(context))
+        XCTAssertNil(decoded.foreground); XCTAssertNil(decoded.frontApplication)
         XCTAssertEqual(context.currentHint(at: now)?.key, b.conversationKey)
         XCTAssertEqual(context.recentInteractions(at: now).map(\.key), [a.conversationKey, b.conversationKey])
     }

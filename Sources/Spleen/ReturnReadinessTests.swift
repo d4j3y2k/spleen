@@ -101,6 +101,19 @@ func runReturnReadinessTests() -> (passed: Int, failures: [String]) {
         check((settled.firstIndex(of: b.id) ?? 9) < (settled.firstIndex(of: a.id) ?? 9),
             "just-left Codex thread outranks the older interaction once the snapshot settles: \(model.compassItems.map(\.title))")
         check(model.compassItems.last?.id == claude.id, "fronted chat ranks last once the snapshot settles, still without a recorded visit")
+        // Switching to an unobserved application by hand: nothing is current, so the
+        // conversation that would have been hidden is offered as a return target.
+        model.endPresentation(); clock.advance(); model.receiveFrontApplication(.other)
+        check(wait { !model.indexing }, "front-application fixture settles")
+        model.prepare()
+        let unhidden = model.compassItems.map(\.id)
+        check((unhidden.firstIndex(of: b.id) ?? 9) < (unhidden.firstIndex(of: a.id) ?? 9),
+            "recorded order holds while another application is in front: \(model.compassItems.map(\.title))")
+        check(model.context.currentHint(at: clock.wall)?.key == b.conversationKey, "a front-application change records no interaction")
+        model.endPresentation(); clock.advance(); model.receiveFrontApplication(.provider(.claude))
+        check(wait { !model.indexing }, "front-application fixture settles again")
+        model.prepare()
+        check(model.compassItems.last?.id == claude.id, "the fronted chat is current again once its application is in front")
         model.endPresentation()
 
         let staleDirectory = root.appendingPathComponent("stale-read")

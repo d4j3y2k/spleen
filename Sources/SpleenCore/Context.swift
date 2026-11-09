@@ -77,6 +77,10 @@ public struct ForegroundHint: Equatable {
     public init(key: ConversationKey, at: Date) { self.key = key; self.at = at }
 }
 
+/// Which application is in front, from its bundle identifier only. Transient placement
+/// input: a conversation cannot be current while its application is not in front.
+public enum FrontApplication: Equatable { case provider(ContextProvider), other }
+
 /// Pure, bounded local state. No app inspection, hook installation, or network work.
 public struct ContextMemory: Codable {
     public static let schemaVersion = 1
@@ -86,16 +90,24 @@ public struct ContextMemory: Codable {
     public private(set) var recentsEnabled: Bool
     /// Transient. Not encoded; set by the app on the copy it hands to a snapshot build.
     public var foreground: ForegroundHint?
+    /// Transient. Not encoded; set by the app on the copy it hands to a snapshot build.
+    public var frontApplication: FrontApplication?
 
     /// Where the user is now. A fresh foreground report that is newer than every
     /// recorded interaction wins over the recorded conversation, which then becomes
     /// the quick-return target. Once its own visit, or any later interaction, is
     /// recorded, the recorded state wins again.
+    /// When another application is in front, no conversation is current: the one that
+    /// would have been is offered as the return target instead of hidden.
     public static func resolveCurrent(recorded: ConversationKey?, recordedAt: Date?, previous: ConversationKey?,
-                                      foreground: ForegroundHint?, at now: Date) -> (current: ConversationKey?, previous: ConversationKey?) {
-        guard let foreground, foreground.at <= now, now.timeIntervalSince(foreground.at) < hintLifetime,
-              foreground.at >= (recordedAt ?? .distantPast), foreground.key != recorded else { return (recorded, previous) }
-        return (foreground.key, recorded ?? previous)
+                                      foreground: ForegroundHint?, front: FrontApplication? = nil, at now: Date) -> (current: ConversationKey?, previous: ConversationKey?) {
+        var result = (current: recorded, previous: previous)
+        if let foreground, foreground.at <= now, now.timeIntervalSince(foreground.at) < hintLifetime,
+           foreground.at >= (recordedAt ?? .distantPast), foreground.key != recorded {
+            result = (foreground.key, recorded ?? previous)
+        }
+        if let front, let current = result.current, front != .provider(current.provider) { return (nil, current) }
+        return result
     }
     public private(set) var events: [ContextEvent] = []
     // Consecutive repetitions collapse; revisiting A after B remains a real transition.
