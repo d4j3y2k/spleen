@@ -8,7 +8,7 @@ Working conversations show a blinking monochrome dot beside plain **Working…**
 
 The cues use the same fresh `.working` sample as the previous spinner. Unread, approval/input and completion remain independent; old reply timestamps and recent activity do not turn on the cues. The existing runtime coverage and expiry limits below still apply.
 
-Validation: release build, strict signature verification using the existing Apple Development identity, and 406/406 native checks passed. Twenty synthetic previews cover both appearances, selected Codex and Claude cards, an active long title, selected recents, search, and high-contrast appearance fixtures. [Build](../evidence/active-thread-build.txt) · [Native checks](../evidence/active-thread-native-tests.txt) · [Dark preview](../evidence/active-thread-previews/native-fixture-compass-dark@2x.png).
+Validation: release build, strict signature verification using the existing Apple Development identity, and 406/406 native checks passed. Twenty synthetic previews cover both appearances, selected Codex and Claude cards, an active long title, selected recents, search, and high-contrast appearance fixtures. Build (`evidence/active-thread-build.txt`) · Native checks (`evidence/active-thread-native-tests.txt`) · Dark preview (`evidence/active-thread-previews/native-fixture-compass-dark@2x.png`).
 
 ## Recent work stays discoverable — 0.2.14
 
@@ -20,7 +20,7 @@ Ranking now considers live attention first, recent explicit visits/selections or
 
 This is a visibility fix, not a replacement for owning-runtime monitoring. Codex's separate working spinner can still expire during long silent requests. Historical activity keeps a conversation useful to select without falsely displaying a continuously working badge.
 
-Validation: 186 package tests and 294 native checks passed. New checks cover old unanswered chats competing with recent work, live-pulse expiry, historical timestamp freshness, last-selected eligibility, and a native app restart after the pulse expires. The updated 0.2.14 app was signed and launched with the existing store. See [verification evidence](../evidence/recent-work-verification.json).
+Validation: 186 package tests and 294 native checks passed. New checks cover old unanswered chats competing with recent work, live-pulse expiry, historical timestamp freshness, last-selected eligibility, and a native app restart after the pulse expires. The updated 0.2.14 app was signed and launched with the existing store. See verification evidence (`evidence/recent-work-verification.json`).
 
 ## Claude Desktop Code
 
@@ -40,7 +40,7 @@ Reply ages are approximate historical display metadata, separate from live compl
 
 **Live verification:** 0.2.12 verified a real working turn and a reversible native unread → read transition, but missed the reported state above. Version 0.2.13 directly detected the existing active background task while the main reply was finished. The updated GUI's card reported Working and its actual drawn spinner was inspected. Repeated real probes checked persistence beyond the evidence lifetime. No Claude prompt was sent and no active task was stopped. The app was rebuilt, signed, reapproved using the previously authorized Accessibility refresh, and relaunched with the existing `.local-state` directory.
 
-All 182 package tests and 291 native checks pass. New regressions exercise the actual control traversal through deep anonymous groups and Session details, multiple background tasks after main completion, absent sidebar markers, disabled/finished controls, transcript boundaries, and sustained fresh evidence followed by expiry. See [spinner repair evidence](../evidence/claude-spinner-verification.json) and the [earlier unread verification](../evidence/claude-status-verification.json). `--claude-status-probe` emits only status flags, known marker enums and bounded scan counts, never identities, titles or messages.
+All 182 package tests and 291 native checks pass. New regressions exercise the actual control traversal through deep anonymous groups and Session details, multiple background tasks after main completion, absent sidebar markers, disabled/finished controls, transcript boundaries, and sustained fresh evidence followed by expiry. See spinner repair evidence (`evidence/claude-spinner-verification.json`) and the earlier unread verification (`evidence/claude-status-verification.json`). `--claude-status-probe` emits only status flags, known marker enums and bounded scan counts, never identities, titles or messages.
 
 ## Unread/read
 
@@ -78,7 +78,7 @@ A reported active thread in another project was already present in the catalog a
 
 Two regression tests reproduced the failures before the correction. All 170 package tests and 283 native checks pass afterward. A read-only replay of the real 553-entry cache and fresh activity journal placed the reported thread third, with working status, while retaining its last-selection hint. The native helper/watcher fixture now covers a crowded picker whose last-selected thread moves into view only on the next opening.
 
-The release build and strict signature verification passed, and Spleen was relaunched with the existing `.local-state` directory. Its live accessibility tree then showed **another Codex chat** as the third compass choice with **Working**, alongside the current Spleen chat with its own **Working** indicator. This verifies actual callback-to-picker visibility, without dispatching either conversation. Saved destinations and context preferences remained byte-identical. The positive unread→viewed UI transition remains unverified. Evidence: `active-picker-before-tests.txt`, `active-picker-tests.txt`, `active-picker-live-replay.json`, `active-picker-native-tests.txt`, and `active-picker-verification.json` in `evidence/`.
+The release build and strict signature verification passed, and Spleen was relaunched with the existing `.local-state` directory. Its live accessibility tree then showed another Codex chat as the third compass choice with **Working**, alongside the current Spleen chat with its own **Working** indicator. This verifies actual callback-to-picker visibility, without dispatching either conversation. Saved destinations and context preferences remained byte-identical. The positive unread→viewed UI transition remains unverified. Evidence: `active-picker-before-tests.txt`, `active-picker-tests.txt`, `active-picker-live-replay.json`, `active-picker-native-tests.txt`, and `active-picker-verification.json` in `evidence/`.
 
 Package regressions cover source isolation, expiry, restarts, old epochs/events, post-disconnect races, local unread schema ambiguity and malformed files, callback semantics, concurrent tools, old-turn completion, storage corruption and size bounds. Native tests exercise a real helper process → journal write → file watcher → model → badge, including completion and disabled-source clearing while card identities stay fixed. Package results: 168 tests passed. Native results: 280/280 checks passed. These helpers received synthetic provider payloads; no synthetic event was written into the real user's journal.
 

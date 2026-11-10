@@ -35,7 +35,7 @@ This supersedes “external Code reopening unverified.” It supports a **versio
 
 **Spleen's own dispatch also passed.** A separately signed temporary copy of 0.2.7 loaded an isolated two-session context fixture with synthetic labels and the already-observed real identities. Discovery and persistent observation were off. Clicking the native compass invoked the unmodified `PanelController` → `NSWorkspace.shared.open` path: B → A → B reached both exact original identities, with one visible row per session. The temporary app was quit and its session fixture removed. This validates restored recents plus actual dispatch; the earlier real observer A → B → A probe remains the evidence for live AX attachment. No complete live observer-to-new-list-to-dispatch chain or Claude restart is claimed.
 
-Validation: **111 Swift tests, 258 native checks**, release build, and strict signature verification passed. The native checks use temporary stores and injected external dispatch. The final 0.2.7 app was relaunched with the original explicit data directory, saved destinations remained byte-identical across that relaunch, and the new Settings checkbox was verified off. [Identity-free experiment record](../evidence/claude-code-navigation-2026-11-04.json).
+Validation: **111 Swift tests, 258 native checks**, release build, and strict signature verification passed. The native checks use temporary stores and injected external dispatch. The final 0.2.7 app was relaunched with the original explicit data directory, saved destinations remained byte-identical across that relaunch, and the new Settings checkbox was verified off. Identity-free experiment record (`evidence/claude-code-navigation-2026-11-04.json`).
 
 ## Bounded discovery decision
 
