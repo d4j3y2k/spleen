@@ -233,6 +233,17 @@ final class AttentionRankingRegressionTests: XCTestCase {
         }
         XCTAssertFalse(prepared.isFresh(now: now.addingTimeInterval(10), uptime: 110))
     }
+    func testLiveSampleLifetimeDoesNotExpirePreparedContext() {
+        var state = SavedState()
+        state.destinations = [Destination(title: "Working", threadID: "thr_working_fixture"), Destination(title: "Other", threadID: "thr_other_fixture")]
+        var attention = SessionAttention()
+        attention.accept(LiveSessionState(key: state.destinations[0].conversationKey, source: "fixture", observedAt: now,
+            lifetime: 8, sequence: 1, activity: .working, isUnread: nil), now: now)
+        let prepared = PreparedContext(state: state, catalog: CatalogCache(), now: now, uptime: 100, attention: attention)
+        // A producer that keeps reporting would otherwise force a full rebuild every few seconds.
+        XCTAssertTrue(prepared.isFresh(now: now.addingTimeInterval(9), uptime: 109),
+                      "the heartbeat rebuilds when a sample actually lapses")
+    }
     func testExpiredSavedSelectionDoesNotResurrectCurrentTopic() {
         var state = SavedState(); state.destinations = [
             Destination(title: "SQLite WAL", threadID: "thr_current_fixture", lastOpenedAt: now.addingTimeInterval(-1801)),

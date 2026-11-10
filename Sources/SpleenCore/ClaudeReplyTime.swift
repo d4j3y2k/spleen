@@ -59,9 +59,7 @@ public struct ClaudeReplyTimes: Codable, Equatable {
         return true
     }
     public func save(to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        try PrivateFile.write(JSONEncoder().encode(self), to: url)
     }
     public static func load(from url: URL) throws -> Self {
         let data = try Data(contentsOf: url)

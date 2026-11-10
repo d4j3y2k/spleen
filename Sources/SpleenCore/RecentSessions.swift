@@ -72,10 +72,21 @@ public struct RecentSessionSnapshot {
         expiresUptime = uptime + expiresAt.timeIntervalSince(now)
     }
 
+    /// False once any entry has expired, so callers know to rebuild.
     public func isFresh(now: Date, uptime: TimeInterval) -> Bool {
         now >= builtAt && uptime >= builtUptime && now < expiresAt && uptime < expiresUptime
     }
+    public func clockMovedBackwards(now: Date, uptime: TimeInterval) -> Bool {
+        now < builtAt || uptime < builtUptime
+    }
+    /// Entries still within retention. Each ages on its own, so the oldest expiring
+    /// does not empty the list; a clock moved backwards still fails closed.
     public func visibleEntries(now: Date, uptime: TimeInterval) -> [RecentSession] {
-        isFresh(now: now, uptime: uptime) ? entries : []
+        guard !clockMovedBackwards(now: now, uptime: uptime) else { return [] }
+        if isFresh(now: now, uptime: uptime) { return entries }
+        // Age by whichever clock moved further: wall time covers sleep, monotonic
+        // time covers a wall clock adjusted after the build.
+        let elapsed = max(now.timeIntervalSince(builtAt), uptime - builtUptime)
+        return entries.filter { builtAt.timeIntervalSince($0.interaction.date) + elapsed < ContextMemory.retention }
     }
 }

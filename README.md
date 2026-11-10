@@ -65,7 +65,7 @@ Spleen appears in the menu bar. Press **Control–Option–Space** to open it. F
 
 `build.sh` produces `build/Spleen.app` and signs it with the first Developer ID or Apple Development identity in your keychain, falling back to an ad-hoc signature. A stable identity matters: macOS ties the Accessibility grant to the code signature, and an ad-hoc signature changes on every build, which silently revokes the grant. Set `SPLEEN_SIGN_IDENTITY` to choose a certificate, or to `-` for ad-hoc on purpose.
 
-`run.sh` launches the app with its data in `.local-state/` inside the checkout. Launching the `.app` directly uses `~/Library/Application Support/Spleen/`. Quit before switching between the two.
+`run.sh` launches the app with its data in `.local-state/` inside the checkout, first quitting a copy of this build that is already running so a fresh build actually starts. Launching the `.app` directly uses `~/Library/Application Support/Spleen/`. Quit before switching between the two.
 
 To check everything:
 
@@ -94,25 +94,25 @@ You can use your own OpenAI API key to assess recent **Codex** conversations. Th
 1. Create your own [OpenAI API key](https://platform.openai.com/settings/organization/api-keys) with API access and available billing/credits.
 2. Save it in a private plain-text file outside the checkout, either as the raw key or as `OPENAI_API_KEY=YOUR_API_KEY_HERE`, replacing the placeholder with your key. Restrict the file to your account with `chmod 600 "/absolute/path/to/key-file"`. The [setup guide](docs/SETUP.md#optional-decisions-assessment) includes the exact file-creation steps.
 3. Select a Codex conversation in Spleen, open **Settings → Decisions assessment → Review selected conversation…**, review the outgoing text, and choose your key file to authorize one request.
-4. For recurring use, choose **Assess cards on open…**, read the consent dialog and select the same file. Subsequent openings assess eligible changed Codex cards, up to 100 requests per day. **Pause assessment on open** stops future automatic requests.
+4. For recurring use, choose **Assess cards on open…**, read the consent dialog and select the same file. Each later opening of the compass assesses the eligible changed Codex cards on screen, up to 100 requests per day. Opening Settings, search or the editor from the menu bar sends nothing. **Pause assessment on open** stops future automatic requests.
 
 The file stays on your Mac; requests use your key directly with OpenAI. Assessment sends bounded message text that can contain private information. Read the privacy details below before enabling it. The [setup guide](docs/SETUP.md#troubleshooting) covers missing messages, key-file permissions and API errors.
 
 ## Privacy and local storage
 
-Everything lives in a handful of JSON files in the data directory:
+Everything lives in a handful of JSON files in the data directory, which Spleen keeps readable only by your account:
 
-- `destinations.json`: saved labels, targets, pins, shortcut and the Dot link.
+- `destinations.json`: saved labels, targets, pins, shortcut and the Dot link, plus each discovered Codex chat you open through Spleen. Those follow Codex's current title unless you relabel them, and **Clear history** forgets them unless they are pinned.
 - `catalog.json` and `relevance.json`: Codex thread metadata, three short excerpts per thread, and a window of up to six recent user and assistant messages per thread, each at most 2,400 characters, used for search, recognition and the optional assessment below.
 - `context.json`: at most 64 recent navigation events, kept for 30 days.
 - `context-settings.json`: observation and compass-order preferences.
-- `activity-hooks.json`: when enabled, at most 128 lifecycle metadata events, kept for one hour. Installing the optional reports also creates `activity-integration/` with the notification helper and private backups of the existing Codex configuration.
+- `activity-hooks.json`: when enabled, at most 128 lifecycle metadata events, kept for one hour. The optional reports keep their notification forwarder and private backups of your Codex configuration in `~/.codex/spleen-activity/`, outside the data directory.
 - `claude-reply-times.json`: observed reply ages, also expiring after 30 days.
 - `assessments.json`: cached assessment labels keyed by a hash of the messages they describe. No text.
 - `assessment-on-open.json` and `assessment-ledgers/`: created by assessment on open. They hold the consent, the key file's path (never the key), and daily request ledgers containing request fingerprints and times.
 - `decision-reviews/`: one-request ledgers created by manually reviewed assessments, independently of assessment on open.
 
-Full transcripts, tool output, reasoning, screen contents and clipboard are never stored. Turning off recent selections in Settings clears the navigation memory and pauses observation.
+Full transcripts, tool output, reasoning, screen contents and clipboard are never stored. Turning off recent selections in Settings clears the navigation memory, including discovered chats saved only because you opened them, and pauses observation.
 
 Spleen sends no conversation data to a remote service by default. Its optional Decisions assessment sends bounded recent Codex messages to OpenAI using a key file you choose. Settings offers two separate controls: review the exact payload and approve **one request**, or enable **assessment on open** for changed Codex cards in the compass, capped at 100 requests per day across pauses and restarts. The daily cap applies to assessment on open; manual reviews are separately authorized one-request sends. Claude message text is never sent.
 
@@ -125,7 +125,7 @@ The key is read when you enable assessment and again at launch if that opt-in re
 - `Sources/SpleenCore`: identity, catalog, relevance, context memory, ranking. Pure Swift with no AppKit dependency, exercised by the package tests.
 - `Sources/Spleen`: the AppKit and SwiftUI app, observers, panel controller, CLI diagnostics and the native self-test.
 - `Sources/SpleenEvaluation` and `Sources/SpleenReplay`: a headless replay harness for ranking changes against scripted scenarios.
-- `integrations/codex`: example hook definitions and the installer for optional Codex reports.
+- `integrations/codex`: setup notes and example hook definitions for the optional Codex reports, which `scripts/install-activity-reports.py` installs.
 - `docs/`: design notes and verification records, indexed in [docs/README.md](docs/README.md).
 
 If you fork this and change the bundle identifier in `Resources/Info.plist`, expect to grant Accessibility access again: the grant belongs to the identifier and signature together.

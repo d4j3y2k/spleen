@@ -28,8 +28,8 @@ public struct InsightCache: Codable {
         entries.removeAll { catalog.hiddenIDs.contains($0.id) || allowed[$0.id]?.folder != $0.folder || allowed[$0.id]?.updatedAt != $0.updatedAt }
     }
     public func save(to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: url, options: .atomic)
+        // Holds message excerpts: owner-only.
+        try PrivateFile.write(JSONEncoder().encode(self), to: url)
     }
     public static func load(from url: URL) throws -> Self {
         let data = try Data(contentsOf: url)
@@ -224,7 +224,7 @@ public struct RelevanceSnapshot: Equatable {
         let baseline = merged.results(query: "", now: now)
         let initial = baseline.map { item -> Row in
             let folder = item.provider == .codex ? metadata[item.threadID]?.folder : nil
-            let project = folder.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
+            let project = folder.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent } ?? ""
             let prose = item.title + " " + (item.provider == .codex ? notes[item.threadID]?.text ?? "" : "")
             let provider = item.provider == .claude && (try? ClaudeDesktopCodeTarget(conversationID: item.threadID)) != nil
                 ? "Claude Code" : item.provider.displayName
@@ -260,14 +260,17 @@ public struct RelevanceSnapshot: Equatable {
         let contextTerms = (activeRow?.terms ?? []).union(TextIndex.terms(hint?.topic ?? ""))
         func absoluteProject(_ value: String?) -> String? {
             guard let value, value.hasPrefix("/"), !value.contains("\0") else { return nil }
-            return URL(fileURLWithPath: value).standardizedFileURL.path
+            // Project folders are directories; saying so avoids a filesystem check per row.
+            return URL(fileURLWithPath: value, isDirectory: true).standardizedFileURL.path
         }
         let contextFolder = absoluteProject(activeRow?.folder) ?? absoluteProject(hint?.project)
         var frequency: [String: Int] = [:]
         for row in initial { for term in row.terms { frequency[term, default: 0] += 1 } }
         func overlap(_ row: Row) -> Double {
             guard row.destination.conversationKey != currentKey else { return 0 }
-            return row.terms.intersection(contextTerms).reduce(0.0) { $0 + log(1 + Double(initial.count) / Double(frequency[$1] ?? 1)) }
+            // Sum in a fixed order: Set iteration changes every launch, and floating-point
+            // addition is not associative, so equal scores could otherwise tie differently.
+            return row.terms.intersection(contextTerms).sorted().reduce(0.0) { $0 + log(1 + Double(initial.count) / Double(frequency[$1] ?? 1)) }
         }
         func score(_ row: Row) -> Double {
             let recentAt = [row.destination.lastOpenedAt, row.visitedAt, row.selectedAt].compactMap { $0 }.max()
@@ -286,12 +289,16 @@ public struct RelevanceSnapshot: Equatable {
                   date <= now, now.timeIntervalSince(date) < ContextMemory.hintLifetime else { return nil }
             return date
         }
+        // Per-row sort keys, computed once. The comparator runs O(n log n) times and
+        // each lookup scans the live samples.
+        let interactions = initial.indices.map(recentInteractionAt)
+        let priorities = initial.map { attention.priority($0.destination, at: now) }
         func prefers(_ a: Int, _ b: Int) -> Bool {
             // Live provider evidence wins first. Recent explicit interactions
             // remain useful after a short activity lease expires; historical
             // unanswered text must not crowd them out during a silent turn.
             if liveAttention[a] != liveAttention[b] { return liveAttention[a] }
-            let left = recentInteractionAt(a), right = recentInteractionAt(b)
+            let left = interactions[a], right = interactions[b]
             if (left != nil) != (right != nil) { return left != nil }
             if let left, let right {
                 // Favor returning to the previous conversation within or across
@@ -303,9 +310,7 @@ public struct RelevanceSnapshot: Equatable {
                     (initial[b].destination.conversationKey == previousKey ? Self.previousRecencyAdvantage : 0)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
             }
-            let aPriority = attention.priority(initial[a].destination, at: now)
-            let bPriority = attention.priority(initial[b].destination, at: now)
-            if aPriority != bPriority { return aPriority > bPriority }
+            if priorities[a] != priorities[b] { return priorities[a] > priorities[b] }
             if scores[a] != scores[b] { return scores[a] > scores[b] }
             if initial[a].destination.pinned != initial[b].destination.pinned { return !initial[a].destination.pinned }
             return a < b
@@ -316,8 +321,8 @@ public struct RelevanceSnapshot: Equatable {
             // the provider. Live evidence or a recent interaction keeps it near
             // the center even when that hint still calls it current. This does
             // not keep an expired spinner alive. The center stays an alternative.
-            let aCurrent = initial[a].destination.conversationKey == currentKey && !liveAttention[a] && recentInteractionAt(a) == nil
-            let bCurrent = initial[b].destination.conversationKey == currentKey && !liveAttention[b] && recentInteractionAt(b) == nil
+            let aCurrent = initial[a].destination.conversationKey == currentKey && !liveAttention[a] && interactions[a] == nil
+            let bCurrent = initial[b].destination.conversationKey == currentKey && !liveAttention[b] && interactions[b] == nil
             if aCurrent != bCurrent { return !aCurrent }
             if initial[a].destination.pinned != initial[b].destination.pinned { return initial[a].destination.pinned }
             if initial[a].destination.pinned { return a < b }
@@ -349,7 +354,7 @@ public struct RelevanceSnapshot: Equatable {
         let activityChoice = latestOtherProjectActivity ?? latestActivity
         if let activity = activityChoice,
            let position = sorted.firstIndex(of: activity), position >= 5,
-           recentInteractionAt(sorted[4]) == nil, !liveAttention[sorted[4]], !initial[sorted[4]].destination.pinned {
+           interactions[sorted[4]] == nil, !liveAttention[sorted[4]], !initial[sorted[4]].destination.pinned {
             sorted.remove(at: position); sorted.insert(activity, at: 4)
             activityAlternative = activity
         }
@@ -367,7 +372,7 @@ public struct RelevanceSnapshot: Equatable {
            let position = sorted.firstIndex(of: candidate), position >= 5,
            let slot = sorted.prefix(5).enumerated().reversed().first(where: {
                $0.offset > 0 && $0.element != activityChoice && !initial[$0.element].destination.pinned &&
-                   !liveAttention[$0.element] && recentInteractionAt($0.element) == nil
+                   !liveAttention[$0.element] && interactions[$0.element] == nil
            })?.offset {
             sorted.remove(at: position)
             let displaced = sorted.remove(at: slot)
@@ -377,11 +382,12 @@ public struct RelevanceSnapshot: Equatable {
         }
         ordered = sorted.map { initial[$0].destination }
         // Explicit search retains settled destinations.
-        rows = (sorted + initial.indices.filter { !eligible.contains($0) }).map { initial[$0] }
+        let eligibleIndices = Set(eligible)
+        rows = (sorted + initial.indices.filter { !eligibleIndices.contains($0) }).map { initial[$0] }
         previews = Dictionary(uniqueKeysWithValues: rows.map { row in
             let item = row.destination
             return (item.conversationKey, ConversationPreview(
-                project: row.folder.map { URL(fileURLWithPath: $0).lastPathComponent },
+                project: row.folder.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent },
                 excerpt: item.provider == .codex ? notes[item.threadID]?.topic : nil,
                 timing: item.provider == .codex ? notes[item.threadID]?.timing : nil,
                 lastVisitedAt: row.visitedAt, lastSelectedAt: row.selectedAt))
@@ -390,7 +396,7 @@ public struct RelevanceSnapshot: Equatable {
         let visitedKey = visitedAlternative.map { initial[$0].destination.conversationKey }
         subtitles = Dictionary(uniqueKeysWithValues: rows.map { row in
             let item = row.destination
-            let project = row.folder.map { URL(fileURLWithPath: $0).lastPathComponent }
+            let project = row.folder.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent }
             let reason: String
             if item.pinned { reason = "Pinned" }
             else if item.conversationKey == visitedKey { reason = "Recently visited" }

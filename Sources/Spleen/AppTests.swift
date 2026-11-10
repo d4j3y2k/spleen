@@ -46,6 +46,13 @@ func runAppTests() -> Bool {
     controller.present()
     controller.panel.makeFirstResponder(controller.panel.contentView)
     check(controller.panel.canBecomeKey && !controller.panel.canBecomeMain, "panel key/main policy")
+    let compassSize = CompassLayout.size
+    let small = NSRect(x: 0, y: 0, width: 1024, height: 550) // 13-inch "Larger Text" below the menu bar
+    let lifted = { (frame: NSRect) in NSPoint(x: frame.midX - compassSize.width / 2, y: frame.midY - compassSize.height / 2 + 50) }
+    let clamped = PanelController.clamp(lifted(small), size: compassSize, in: small)
+    check(clamped.x == small.minX && clamped.y + compassSize.height == small.maxY, "an oversized panel keeps its top-left corner on screen")
+    let roomy = NSRect(x: 0, y: 0, width: 2560, height: 1400)
+    check(PanelController.clamp(lifted(roomy), size: compassSize, in: roomy) == lifted(roomy), "a panel that fits keeps its lifted center")
     controller.currentPID = { 101 }
     controller.dismiss(.cancel)
     controller.present()
@@ -100,6 +107,7 @@ func runAppTests() -> Bool {
     check(catalogModel.results.isEmpty, "typed search uses frozen catalog during refresh")
     catalogModel.applyCatalogUpdate()
     check(catalogModel.results.count == 1 && !catalogModel.updateReady, "explicit refresh installs discovered results")
+    check(catalogModel.mode == .search && catalogModel.query == "discovered", "applying new chats keeps the typed search")
     let selected = catalogModel.selectedID
     catalogModel.acceptCatalog(entries: [entry, CatalogEntry(id: "thr_discovered_2", title: "New work", folder: "/fixture/personal", updatedAt: Date())], truncated: false)
     check(catalogModel.selectedID == selected && catalogModel.results.count == 1, "new catalog does not move selection")
@@ -107,11 +115,32 @@ func runAppTests() -> Bool {
     check(catalogModel.results.count == 2, "next invocation adopts new catalog")
     catalogModel.acceptedDispatch(entry.destination.id)
     check(catalogModel.state.destinations.first?.threadID == entry.id && catalogModel.state.destinations.first?.lastOpenedAt != nil, "discovered selection becomes remembered destination")
+    catalogModel.acceptCatalog(entries: [CatalogEntry(id: entry.id, title: "Renamed in Codex", folder: "/fixture/personal", updatedAt: Date()),
+        CatalogEntry(id: "thr_discovered_2", title: "New work", folder: "/fixture/personal", updatedAt: Date())], truncated: false)
+    check(catalogModel.state.destinations.first?.title == "Renamed in Codex", "a chat saved by opening it follows Codex's renames")
     catalogModel.removeCatalogFolder("/fixture/personal")
     check(catalogModel.results.count == 1, "removing discovery scope preserves saved destination")
     let reloaded = AppModel(repository: catalogModel.repository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] })
     models.append(reloaded)
     check(reloaded.results.count == 1, "catalog and saved state survive reload")
+    // A failed open is shown for that opening only; a lasting problem stays visible.
+    let errorModel = AppModel(repository: StateRepository(url: temporary.appendingPathComponent("error-state.json")),
+                              catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] })
+    models.append(errorModel); settle()
+    errorModel.reportTransientError("Couldn’t open this conversation.")
+    errorModel.prepare()
+    check(errorModel.error == nil, "a failed open's error clears at the next opening")
+    errorModel.endPresentation(); errorModel.error = "Couldn't register the shortcut"
+    errorModel.prepare()
+    check(errorModel.error != nil, "a lasting problem stays visible across openings")
+    errorModel.endPresentation(); errorModel.error = nil
+    // A shortcut still taken by another app does not block saving the other settings.
+    errorModel.changeShortcut = { _ in throw NSError(domain: "fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Shortcut in use"]) }
+    errorModel.showSettings(); errorModel.rememberDraft = false; errorModel.saveSettings()
+    check(!errorModel.state.rememberRecents && errorModel.shortcutStatus == "Shortcut in use",
+          "an unchanged shortcut that is still taken does not block saving other settings")
+    errorModel.showSettings(); errorModel.shortcutDraft = Shortcut(key: "K"); errorModel.saveSettings()
+    check(errorModel.state.shortcut == Shortcut(), "a new shortcut that cannot be registered is not saved")
     // Recognition details freeze with the visible choices until the next invocation.
     let previewDirectory = temporary.appendingPathComponent("preview")
     let previewRepository = StateRepository(url: previewDirectory.appendingPathComponent("destinations.json"))
@@ -217,6 +246,9 @@ func runAppTests() -> Bool {
     let attention = runAttentionTests()
     count += attention.passed + attention.failures.count
     failures += attention.failures
+    let background = runBackgroundWorkTests()
+    count += background.passed + background.failures.count
+    failures += background.failures
     let desktop = runDesktopTests()
     count += desktop.passed + desktop.failures.count
     failures += desktop.failures

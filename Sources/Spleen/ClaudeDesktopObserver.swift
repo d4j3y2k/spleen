@@ -55,11 +55,21 @@ final class ClaudeDesktopObserver {
     private var processID: pid_t?
     private var registeredNotifications: [CFString] = []
     private let gate = ClaudeDesktopObservationGate()
+    /// Attaching can fail while Claude is still launching. Retry with a backoff rather
+    /// than stopping observation until Settings is saved again.
+    private var attachFailures = 0
+    private var attachFailurePID: pid_t?
+    private var nextAttachAttempt: TimeInterval = 0
     static let bundleID = "com.anthropic.claudefordesktop"
 
+    /// Fired when Claude is in front showing a page that is not a conversation, such as
+    /// a new chat. Placement only: the conversation just left becomes a return target.
+    private let onLeftConversation: (() -> Void)?
+
     init(diagnosticsEnabled: Bool = false, onForeground: ((ClaudeDesktopObservation) -> Void)? = nil,
-         onObservation: @escaping (ClaudeDesktopObservation) -> Void) {
+         onLeftConversation: (() -> Void)? = nil, onObservation: @escaping (ClaudeDesktopObservation) -> Void) {
         self.onForeground = onForeground
+        self.onLeftConversation = onLeftConversation
         self.onObservation = onObservation
         self.diagnosticsEnabled = diagnosticsEnabled
         statistics = Diagnostics(enabled: diagnosticsEnabled)
@@ -134,6 +144,14 @@ final class ClaudeDesktopObserver {
         for token in workspaceTokens { NSWorkspace.shared.notificationCenter.removeObserver(token) }
         workspaceTokens.removeAll()
         detach()
+        attachFailures = 0; attachFailurePID = nil; nextAttachAttempt = 0
+    }
+
+    private func attachFailed() -> Bool {
+        count(\.attachmentFailures)
+        attachFailures += 1
+        nextAttachAttempt = ProcessInfo.processInfo.systemUptime + min(30, 0.5 * pow(2, Double(attachFailures - 1)))
+        return true // Stay armed; the recovery timer retries after the backoff.
     }
 
     deinit { stop() }
@@ -169,6 +187,10 @@ final class ClaudeDesktopObserver {
         count(\.foregroundClaudeFound)
         if processID == active.processIdentifier { return true }
         detach()
+        if attachFailurePID != active.processIdentifier {
+            attachFailurePID = active.processIdentifier; attachFailures = 0; nextAttachAttempt = 0
+        }
+        guard ProcessInfo.processInfo.systemUptime >= nextAttachAttempt else { return true }
         count(\.attachmentAttempts)
         let element = AXUIElementCreateApplication(active.processIdentifier)
         AXUIElementSetMessagingTimeout(element, 0.1)
@@ -179,7 +201,7 @@ final class ClaudeDesktopObserver {
             ClaudeObservationCallbacks.lookup(callbackID)?.notified(callbackID: callbackID)
         }
         guard AXObserverCreate(active.processIdentifier, callback, &created) == .success,
-              let created else { count(\.attachmentFailures); return false }
+              let created else { return attachFailed() }
         observer = created
         application = element
         processID = active.processIdentifier
@@ -193,8 +215,9 @@ final class ClaudeDesktopObserver {
                 count(\.registrationSuccesses)
             } else { count(\.registrationFailures) }
         }
-        guard !registeredNotifications.isEmpty else { count(\.attachmentFailures); detach(); return false }
+        guard !registeredNotifications.isEmpty else { detach(); return attachFailed() }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
+        attachFailures = 0; nextAttachAttempt = 0
         count(\.attachmentSuccesses)
         scheduleRead()
         return true
@@ -239,12 +262,16 @@ final class ClaudeDesktopObserver {
         let window = rawWindow as! AXUIElement
         var nodes: [(AXUIElement, Int)] = [(window, 0)]
         var index = 0
+        // A known non-conversation page, with nothing left unread, means no conversation is
+        // in front. Anything unreadable or unfamiliar stays unknown.
+        var sawOtherPage = false, incomplete = false
         while index < nodes.count, index < 80, mayRead(ticket, before: deadline) {
             let (node, depth) = nodes[index]; index += 1
-            guard let role = value(node, kAXRoleAttribute, ticket: ticket, deadline: deadline) as? String else { continue }
+            guard let role = value(node, kAXRoleAttribute, ticket: ticket, deadline: deadline) as? String else { incomplete = true; continue }
             if role == "AXWebArea" { count(\.webAreasFound) }
             if role == "AXWebArea", let raw = value(node, kAXURLAttribute, ticket: ticket, deadline: deadline) {
                 let url = (raw as? URL)?.absoluteString ?? (raw as? String)
+                if let url, ClaudeDesktopObservation.isOtherClaudePage(url: url) { sawOtherPage = true }
                 let title = value(node, kAXTitleAttribute, ticket: ticket, deadline: deadline) as? String ?? ""
                 if let url, let observation = ClaudeDesktopObservation(url: url, title: title), mayRead(ticket, before: deadline) {
                     count(\.metadataParsed)
@@ -282,13 +309,21 @@ final class ClaudeDesktopObserver {
             var children: CFArray?
             // Copy only the bounded prefix. Never fetch message value/text or scroll.
             let result = AXUIElementCopyAttributeValues(node, kAXChildrenAttribute as CFString, 0, 80 - nodes.count, &children)
-            if result != .success { count(\.axAttributeFailures) }
+            if result != .success { count(\.axAttributeFailures); incomplete = true }
             if result == .success,
                mayRead(ticket, before: deadline), let children = children as? [AXUIElement] {
                 nodes.append(contentsOf: children.map { ($0, depth + 1) })
             }
         }
         if index >= 80 { count(\.scanLimitReached) }
+        if sawOtherPage, !incomplete, index >= nodes.count, nodes.count < 80, mayRead(ticket, before: deadline) {
+            let gate = self.gate, left = onLeftConversation
+            DispatchQueue.main.async {
+                guard Self.isTrusted, let app = NSRunningApplication(processIdentifier: pid), app.isActive,
+                      app.bundleIdentifier == Self.bundleID, gate.clearDelivery(for: ticket) else { return }
+                left?()
+            }
+        }
     }
 
     private func mayRead(_ ticket: ClaudeDesktopObservationGate.Ticket, before deadline: TimeInterval) -> Bool {

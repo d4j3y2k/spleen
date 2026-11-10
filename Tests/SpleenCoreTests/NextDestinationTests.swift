@@ -133,7 +133,13 @@ final class NextDestinationTests: XCTestCase {
             XCTAssertNotEqual(snapshot.ordered.first, current, "A different conversation remains the center")
             XCTAssertEqual(Array(snapshot.ordered.dropFirst().prefix(2)), pins)
             XCTAssertEqual(snapshot.results(query: current.title).first, current)
-            let expired = prepared.snapshot(now: now.addingTimeInterval(15), uptime: 115)
+            // Live lifetimes are not scheduled into the prepared context: the app's heartbeat
+            // expires lapsed samples and rebuilds.
+            var lapsed = attention
+            XCTAssertTrue(lapsed.expireLive(at: now.addingTimeInterval(15)))
+            let rebuilt = PreparedContext(state: state, catalog: CatalogCache(), context: memory,
+                now: now.addingTimeInterval(15), uptime: 115, attention: lapsed)
+            let expired = rebuilt.snapshot(now: now.addingTimeInterval(15), uptime: 115)
             XCTAssertEqual(expired.ordered.last, current, "Expired live evidence alone does not manufacture interaction history")
         }
     }

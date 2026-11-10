@@ -47,7 +47,14 @@ final class AutomaticAttentionTests: XCTestCase {
                        "password=hunter22", "\"client_secret\": \"made-up-secret-value\"",
                        "OPENAI_API_KEY='example-key-value'", "Authorization: Bearer abcdefghijklmnop",
                        "ghp_" + String(repeating: "a", count: 30), "AKIA" + String(repeating: "A", count: 16),
-                       "refresh_token: example-refresh-token", "eyJabcdefghi.abcdefghijk.abcdefghijk"]
+                       "refresh_token: example-refresh-token", "eyJabcdefghi.abcdefghijk.abcdefghijk",
+                       // .env lines with a prefixed name, which `\b` used to miss.
+                       "DB_PASSWORD=hunter2hunter2", "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
+                       "GOOGLE_CLIENT_SECRET=made-up-secret", "export GITHUB_TOKEN=made-up-token-value",
+                       "SLACK_BOT_TOKEN=xoxb-made-up", "DATABASE_PASS: made-up-pass",
+                       "sk_live_" + String(repeating: "a", count: 24), "rk_test_" + String(repeating: "b", count: 24),
+                       "npm_" + String(repeating: "c", count: 36), "postgres://admin:made-up-pass@db.internal:5432/app",
+                       "-----BEGIN PGP PRIVATE KEY BLOCK-----", "-----BEGIN OPENSSH PRIVATE KEY-----"]
         for secret in secrets {
             let w = window(text: "Example text: \(secret)")
             XCTAssertTrue(AutomaticAttention.containsLikelySecret(w), secret)
@@ -75,7 +82,10 @@ final class AutomaticAttentionTests: XCTestCase {
     }
     func testOrdinaryCredentialDiscussionDoesNotRequireASecret() {
         for text in ["The API key is configured securely.", "Please reset your password in settings.",
-                     "Completed and verified the implementation.", "Waiting for your choice of theme."] {
+                     "Completed and verified the implementation.", "Waiting for your choice of theme.",
+                     "Set max_tokens: 4096 and read input_tokens from usage.", "The compass: true, bypass: none.",
+                     "Open http://localhost:8080/path and ssh://git@github.com/org/repo.",
+                     "Use pk_live_ keys only in the browser."] {
             XCTAssertFalse(AutomaticAttention.containsLikelySecret(window(text: text)), text)
         }
     }

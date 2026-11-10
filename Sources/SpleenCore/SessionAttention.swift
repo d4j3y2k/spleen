@@ -287,8 +287,30 @@ public struct SessionAttention: Equatable {
         publishLive(at: now)
         return before != live
     }
-    /// Prepared ranking must account for every independent field/source expiry.
+    /// Every independent field/source expiry. Prepared snapshots do not schedule these:
+    /// producers refresh them every few seconds, and the app's heartbeat rebuilds when
+    /// a sample actually lapses (see `hasExpiredSamples`).
     public var liveExpirationDates: [Date] { sourceSamples.values.map(\.expiresAt) }
+    /// What live evidence changes on screen: its facts, not when it was observed. A
+    /// producer re-reporting the same facts leaves this unchanged, so it needs no rebuild.
+    public struct LiveFacts: Equatable {
+        let activity: RuntimeActivity?
+        let isUnread: Bool?
+        let completion: LiveTurnCompletion?
+        /// Suppression compares observation times with message windows, so once it is
+        /// enabled those times count as facts too.
+        let observedAt: [Date?]
+    }
+    public var presentedFacts: [ConversationKey: LiveFacts] {
+        live.mapValues { state in
+            LiveFacts(activity: state.activity, isUnread: state.isUnread, completion: state.completion,
+                      observedAt: validatedForSuppression ? [state.activityObservedAt, state.unreadObservedAt] : [])
+        }
+    }
+    /// A cheap check for the heartbeat, so a quiet tick does not mutate (and republish) state.
+    public func hasExpiredSamples(at now: Date) -> Bool {
+        sourceSamples.values.contains { !$0.isFresh(at: now) }
+    }
     public func suppress(_ item: Destination, at now: Date) -> Bool {
         guard validatedForSuppression, !item.pinned, assessment(for: item.conversationKey, at: now) == .appearsFinished,
               let sample = liveState(for: item.conversationKey, at: now), sample.isUnread == false,

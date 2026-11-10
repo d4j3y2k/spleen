@@ -95,7 +95,7 @@ struct SwitcherView: View {
             .padding(.horizontal, 22).padding(.top, 4)
             panel {
                 HStack(spacing: 8) {
-                    Text(model.query.isEmpty ? "CONVERSATIONS" : "\(model.results.count) RESULTS")
+                    Text(model.query.isEmpty ? "CONVERSATIONS" : (model.results.count == 1 ? "1 RESULT" : "\(model.results.count) RESULTS"))
                         .font(.system(size: 9, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
                     Spacer()
                     if model.updateReady {

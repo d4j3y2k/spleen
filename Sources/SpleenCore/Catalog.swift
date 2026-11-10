@@ -43,8 +43,7 @@ public struct CatalogCache: Codable {
         return merged
     }
     public func save(to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: url, options: .atomic)
+        try PrivateFile.write(JSONEncoder().encode(self), to: url)
     }
     public static func load(from url: URL) throws -> CatalogCache {
         let value = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
@@ -148,6 +147,16 @@ public final class CodexCatalogClient {
             return results
         }
     }
+    /// The result of one JSON-RPC response line, or nil for another request's id. A null or
+    /// scalar result from a newer app-server is a protocol error: re-encoding it would raise
+    /// an Objective-C exception, which Swift cannot catch, and crash the app.
+    static func responseResult(_ line: Data, id: Int) throws -> Data? {
+        guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { throw CatalogError.protocolError }
+        guard object["id"] as? Int == id else { return nil }
+        guard object["error"] == nil, let result = object["result"],
+              JSONSerialization.isValidJSONObject(result) else { throw CatalogError.protocolError }
+        return try JSONSerialization.data(withJSONObject: result)
+    }
     private func session<T>(_ body: (_ send: ([String: Any]) throws -> Void, _ receive: (Int) throws -> Data) throws -> T) throws -> T {
         let process = Process(), input = Pipe(), output = Pipe()
         process.executableURL = executable; process.arguments = ["app-server"]
@@ -172,11 +181,9 @@ public final class CodexCatalogClient {
         func receive(_ id: Int) throws -> Data {
             while ProcessInfo.processInfo.systemUptime < deadline {
                 if let newline = buffer.firstIndex(of: 10) {
-                    let line = buffer[..<newline]; buffer.removeSubrange(...newline)
-                    guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { throw CatalogError.protocolError }
-                    guard object["id"] as? Int == id else { continue }
-                    guard object["error"] == nil, let result = object["result"] else { throw CatalogError.protocolError }
-                    return try JSONSerialization.data(withJSONObject: result)
+                    let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
+                    guard let result = try Self.responseResult(line, id: id) else { continue }
+                    return result
                 }
                 var fd = pollfd(fd: output.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0)
                 let ready = poll(&fd, 1, 100)

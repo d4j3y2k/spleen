@@ -111,6 +111,22 @@ func runAttentionTests() -> (passed: Int, failures: [String]) {
         check(openMock.bodies.isEmpty && launchController.session.isPresented,
               "the startup panel with restored consent presents without assessment")
         launchController.dismiss(.focusLoss)
+        // Menu-bar Settings, Add and Search show no compass cards, so they assess none.
+        for open in [launchController.presentSettings, launchController.presentEditor, launchController.presentSearch] {
+            open()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            launchController.dismiss(.focusLoss)
+        }
+        check(openMock.bodies.isEmpty, "menu-bar Settings, Add and Search send no compass cards")
+        launchController.openDot()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check(openMock.bodies.isEmpty && openModel.mode == .settings, "Open Dot without a Dot shows Settings and sends nothing")
+        launchController.dismiss(.focusLoss)
+        // An opening that switched away from the compass before its deferred work ran sends nothing.
+        openModel.prepare(); openModel.beginSearch("Delivered")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check(openMock.bodies.isEmpty, "an opening that is already searching sends no compass cards")
+        openModel.endPresentation()
         openModel.prepare()
         settle { openMock.bodies.isEmpty }
         check(openMock.bodies.count == 1 && openModel.compassItems.contains(first), "a press sends the changed Codex card on screen")

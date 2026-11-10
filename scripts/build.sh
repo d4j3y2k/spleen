@@ -17,10 +17,18 @@ iconutil --convert icns .build/Spleen.iconset --output "$APP/Contents/Resources/
 # signature, so each rebuild silently lost Claude/Codex observation. A certificate
 # identity keeps the same designated requirement across builds. Override with
 # SPLEEN_SIGN_IDENTITY; set it to "-" for an ad-hoc build.
-SIGN_IDENTITY="${SPLEEN_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
-  | awk -F'"' '/Developer ID Application|Apple Development/ { print $2; exit }')}"
-SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+# Sign by certificate hash: a renewed certificate can share its name with the old one,
+# and codesign refuses an ambiguous name.
+if [[ -n "${SPLEEN_SIGN_IDENTITY:-}" ]]; then
+  SIGN_IDENTITY="$SPLEEN_SIGN_IDENTITY"; SIGN_NAME="$SPLEEN_SIGN_IDENTITY"
+else
+  IDENTITY_LINE="$({ security find-identity -v -p codesigning 2>/dev/null || true; } \
+    | awk '/Developer ID Application|Apple Development/ { print; exit }')"
+  SIGN_IDENTITY="$(print -r -- "$IDENTITY_LINE" | awk '{ print $2 }')"
+  SIGN_NAME="$(print -r -- "$IDENTITY_LINE" | awk -F'"' '{ print $2 }')"
+fi
+if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then SIGN_IDENTITY="-"; SIGN_NAME="ad hoc (Accessibility access resets on every build)"; fi
 codesign --force --sign "$SIGN_IDENTITY" "$APP"
 codesign --verify --strict "$APP"
 print "Built: $APP"
-print "Signed with: $SIGN_IDENTITY"
+print "Signed with: $SIGN_NAME"

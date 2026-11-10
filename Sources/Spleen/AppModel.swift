@@ -12,7 +12,16 @@ final class AppModel: ObservableObject {
     @Published var selectedID: UUID? {
         didSet { if !preparingInvocation && selectedID != oldValue { freezeOpening() } }
     }
-    @Published var error: String?
+    @Published var error: String? { didSet { if !reportingTransientError { errorIsTransient = false } } }
+    /// A failed open or a refused action is shown until the next opening or a successful
+    /// open. Load and shortcut problems set `error` directly and stay until resolved.
+    private var errorIsTransient = false
+    private var reportingTransientError = false
+    func reportTransientError(_ message: String) {
+        reportingTransientError = true; error = message; reportingTransientError = false
+        errorIsTransient = true
+    }
+    private func clearTransientError() { if errorIsTransient { error = nil } }
     @Published var mode: Mode = .compass
     private(set) var isPresentingModal = false
     @Published var editorID: UUID?
@@ -123,7 +132,13 @@ final class AppModel: ObservableObject {
     private var pendingVisibleAdoption: Int?
     @Published private(set) var indexing = false
     private var insights = InsightCache()
-    @Published private(set) var attention = SessionAttention()
+    /// Published like `@Published`, except for quiet stores from `updateLiveAttention`:
+    /// live producers re-report the same facts every few seconds, and republishing each
+    /// one re-rendered the panel even while hidden.
+    private(set) var attention = SessionAttention() {
+        willSet { if publishesAttention { objectWillChange.send() } }
+    }
+    private var publishesAttention = true
     private var assessmentTransport: DecisionsTransport?
     @Published private(set) var automaticAssessmentEnabled = false
     @Published private(set) var automaticAssessmentStatus = "Off · nothing is sent when you open Spleen."
@@ -241,6 +256,7 @@ final class AppModel: ObservableObject {
         if catalogDiscoveryEnabled && !catalogLoadFailed { catalogStatus = "Cached chats · ready" }
         insights = (try? InsightCache.load(from: insightURL)) ?? InsightCache()
         insights.retain(catalog: catalog)
+        if !catalogLoadFailed { adoptCatalogTitles() }
         pendingTimingBackfill = insights.entries.contains { $0.timing == nil || $0.window == nil }
         if let data = try? Data(contentsOf: assessmentURL), data.count <= 500_000,
            let cache = try? JSONDecoder().decode([String: AssessedSession].self, from: data), cache.count <= 2000 {
@@ -248,9 +264,19 @@ final class AppModel: ObservableObject {
         }
         attentionTimer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
             guard let self else { return }
-            if self.attention.expireLive(at: self.now()) { self.rebuildSnapshot() }
+            let instant = self.now(), tick = self.uptime()
+            // A quiet tick changes nothing, so it publishes nothing.
+            if self.attention.hasExpiredSamples(at: instant),
+               self.updateLiveAttention({ $0.expireLive(at: instant); return false }) {
+                self.rebuildSnapshot()
+            } else if !self.indexing && (!self.preparedContext.isFresh(now: instant, uptime: tick) ||
+                        !self.readyRecents.isFresh(now: instant, uptime: tick)) {
+                // A recorded interaction or visit aged out; refresh before the next opening.
+                self.rebuildSnapshot()
+            }
             self.pollDesktopReadState()
         }
+        attentionTimer?.tolerance = 0.5
         if let attentionTimer { RunLoop.main.add(attentionTimer, forMode: .common) }
         context = loadFailed ? ContextMemory(recentsEnabled: false) : (try? ContextRepository(url: contextURL).load()) ?? ContextMemory()
         let storedRecentsEnabled = context.recentsEnabled
@@ -289,6 +315,7 @@ final class AppModel: ObservableObject {
     }
     func prepare(assessOnOpen: Bool = true) {
         let start = ProcessInfo.processInfo.systemUptime
+        clearTransientError()
         let instant = now(), tick = uptime()
         let fresh = preparedContext.isFresh(now: instant, uptime: tick)
         let snapshot = preparedContext.snapshot(now: instant, uptime: tick)
@@ -315,7 +342,8 @@ final class AppModel: ObservableObject {
             if self.presentationGeneration == invocation { self.refineOpeningIfReady() }
             self.refreshCatalog()
             self.pollDesktopReadState(force: true)
-            if assessOnOpen && self.automaticConsent != nil {
+            // Consent covers cards on screen: only an opening still showing its compass.
+            if assessOnOpen && self.automaticConsent != nil && self.presentationGeneration == invocation && self.mode == .compass {
                 // Finish this press's cards even if the panel closes; nothing after 30 seconds.
                 self.openTargets = Set(self.compassItems.filter { $0.provider == .codex }.map(\.conversationKey))
                 self.openTargetsUntil = self.uptime() + 30
@@ -355,6 +383,11 @@ final class AppModel: ObservableObject {
         frontApplication = .provider(key.provider)
         refreshImmediateReturn(at: instant)
         rebuildSnapshot()
+    }
+    /// An observer saw its app in front showing no conversation, such as a new chat or
+    /// projects. The conversation just left is then a return target, not hidden as current.
+    func receiveForegroundWithoutConversation(_ provider: ContextProvider) {
+        receiveFrontApplication(.providerWithoutConversation(provider))
     }
     /// Which application is in front, from its bundle identifier only. Never stored.
     /// Switching apps by hand is not observed as a conversation, so without this a
@@ -406,7 +439,17 @@ final class AppModel: ObservableObject {
         immediateReturn = ImmediateReturn(order: [target] + remaining + currentItems, builtAt: instant, builtUptime: tick,
             expiresAt: expiry, expiresUptime: tick + expiry.timeIntervalSince(instant))
     }
-    func applyCatalogUpdate() { prepare() }
+    /// "New chats ready": show the refreshed choices in place. This is not a new opening,
+    /// so it keeps the mode and typed search, and it assesses nothing.
+    func applyCatalogUpdate() {
+        guard isPresented else { updateReady = false; return }
+        freezeOpening(); visibleInitialReturnKey = nil
+        visibleSnapshot = preparedSnapshot; visibleOrder = preparedOrder
+        compassItems = Array(preparedOrder.prefix(5))
+        recentSessions = readyRecents.visibleEntries(now: now(), uptime: uptime())
+        updateReady = false
+        refreshResults()
+    }
     func saveCatalog() {
         guard !catalogLoadFailed else { return }
         let value = catalog, url = catalogURL, writer = catalogWriter
@@ -481,8 +524,16 @@ final class AppModel: ObservableObject {
         if changed { enrichmentRevision += 1 }
         insights.retain(catalog: catalog)
         saveInsights()
-        if changed { rebuildSnapshot() }
+        if changed { adoptCatalogTitles(); rebuildSnapshot() }
         enrichCatalog()
+    }
+    /// Saved chats that follow Codex pick up its renames. Unlike `commit`, this leaves the
+    /// quick-return placement alone: a background refresh is not a user edit.
+    private func adoptCatalogTitles() {
+        guard !loadFailed else { return }
+        var next = state
+        guard next.adoptCatalogTitles(from: catalog) else { return }
+        do { try repository.save(next); state = next } catch { /* Titles stay as they were; the next refresh retries. */ }
     }
     private func saveInsights() {
         let value = insights, url = insightURL
@@ -617,21 +668,19 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.desktopReadBusy = false
-                var changed = false
+                let changed: Bool, status: String
                 switch result {
                 case .success(let samples):
-                    for sample in samples where keys.contains(sample.key) {
-                        let before = self.attention.liveState(for: sample.key, at: self.now())
-                        if self.attention.accept(sample, now: self.now()) {
-                            let after = self.attention.liveState(for: sample.key, at: self.now())
-                            changed = changed || before?.isUnread != after?.isUnread
-                        }
+                    changed = self.updateLiveAttention { attention in
+                        for sample in samples where keys.contains(sample.key) { attention.accept(sample, now: self.now()) }
+                        return false
                     }
-                    self.unreadIndicatorStatus = "Reading desktop unread markers · updates every 2 seconds while open."
+                    status = "Reading desktop unread markers · updates every 2 seconds while open."
                 case .failure:
-                    changed = self.attention.disconnect(source: CodexDesktopReadStateClient.source, at: self.now())
-                    self.unreadIndicatorStatus = "Desktop unread source unavailable or ambiguous · state unknown."
+                    changed = self.updateLiveAttention { $0.disconnect(source: CodexDesktopReadStateClient.source, at: self.now()); return false }
+                    status = "Desktop unread source unavailable or ambiguous · state unknown."
                 }
+                if self.unreadIndicatorStatus != status { self.unreadIndicatorStatus = status }
                 if changed || !self.preparedContext.isFresh(now: self.now(), uptime: self.uptime()) { self.rebuildSnapshot() }
             }
         }
@@ -647,8 +696,11 @@ final class AppModel: ObservableObject {
                 switch result {
                 case .success(let snapshot):
                     if !snapshot.enabled {
-                        let cleared = self.attention.clearRecentActivity()
-                        if self.attention.disconnect(source: ActivityHookSnapshot.source, at: self.now()) || cleared { self.rebuildSnapshot() }
+                        if self.updateLiveAttention({ attention in
+                            let cleared = attention.clearRecentActivity()
+                            attention.disconnect(source: ActivityHookSnapshot.source, at: self.now())
+                            return cleared
+                        }) { self.rebuildSnapshot() }
                         self.liveIndicatorStatus = "Working reports off · Codex hooks need setup."
                     } else {
                         // Fetch new thread metadata when work starts, rather
@@ -664,14 +716,22 @@ final class AppModel: ObservableObject {
                             self.lastCompletionReportID = completion.id
                             self.refreshCatalog(force: true)
                         }
-                        var changed = self.attention.rememberActivity(snapshot.recentActivity(at: self.now()), at: self.now())
-                        for sample in snapshot.samples(at: self.now()) { changed = self.attention.accept(sample, now: self.now()) || changed }
-                        self.liveIndicatorStatus = snapshot.events.isEmpty ? "Waiting for Codex activity reports · review hooks in Codex." : "Receiving Codex activity reports."
+                        // Activity history orders recent work, so a newer date counts as a change.
+                        let changed = self.updateLiveAttention { attention in
+                            let remembered = attention.rememberActivity(snapshot.recentActivity(at: self.now()), at: self.now())
+                            for sample in snapshot.samples(at: self.now()) { attention.accept(sample, now: self.now()) }
+                            return remembered
+                        }
+                        let status = snapshot.events.isEmpty ? "Waiting for Codex activity reports · review hooks in Codex." : "Receiving Codex activity reports."
+                        if self.liveIndicatorStatus != status { self.liveIndicatorStatus = status }
                         if changed { self.rebuildSnapshot() }
                     }
                 case .failure:
-                    let cleared = self.attention.clearRecentActivity()
-                    if self.attention.disconnect(source: ActivityHookSnapshot.source, at: self.now()) || cleared { self.rebuildSnapshot() }
+                    if self.updateLiveAttention({ attention in
+                        let cleared = attention.clearRecentActivity()
+                        attention.disconnect(source: ActivityHookSnapshot.source, at: self.now())
+                        return cleared
+                    }) { self.rebuildSnapshot() }
                     self.liveIndicatorStatus = "Activity source unavailable · indicators unknown."
                 }
             }
@@ -680,8 +740,22 @@ final class AppModel: ObservableObject {
 
     /// Adapter entry point; no timer or prose can fabricate a provider sample.
     func receiveLiveState(_ sample: LiveSessionState) {
-        guard attention.accept(sample, now: now()) else { return }
-        rebuildSnapshot() // Does not replace the visible card identities.
+        // A repeated report of the same facts only extends its lifetime.
+        if updateLiveAttention({ $0.accept(sample, now: now()); return false }) {
+            rebuildSnapshot() // Does not replace the visible card identities.
+        }
+    }
+    /// Applies live evidence to a copy. Republishes, and reports a change, only when
+    /// what the panel shows changed: the live facts, or anything `change` returns true for
+    /// (such as activity history). Otherwise the refreshed samples are stored quietly.
+    private func updateLiveAttention(_ change: (inout SessionAttention) -> Bool) -> Bool {
+        var next = attention
+        let before = next.presentedFacts
+        let reported = change(&next)
+        let changed = reported || next.presentedFacts != before
+        if changed { attention = next }
+        else { publishesAttention = false; attention = next; publishesAttention = true }
+        return changed
     }
     func liveState(_ item: Destination) -> LiveSessionState? {
         attention.liveState(for: item.conversationKey, at: now())
@@ -826,7 +900,7 @@ final class AppModel: ObservableObject {
                     }
                     self.assessmentCache[window.contentVersion] = result
                     let cache = self.assessmentCache, url = self.assessmentURL
-                    self.insightSaveQueue.async { if let data = try? JSONEncoder().encode(cache) { try? data.write(to: url, options: .atomic) } }
+                    self.insightSaveQueue.async { if let data = try? JSONEncoder().encode(cache) { try? PrivateFile.write(data, to: url) } }
                     self.rebuildSnapshot()
                     self.decisionReviewStatus = "Result: \(result.assessment.rawValue.replacingOccurrences(of: "_", with: " ")) · \(String(format: "%.2f", self.uptime() - started))s · no further calls."
                 case .failure(let error):
@@ -894,7 +968,7 @@ final class AppModel: ObservableObject {
                                     self.assessmentCache = self.assessmentCache.filter { retained.contains($0.key) }
                                 }
                                 let cache = self.assessmentCache, url = self.assessmentURL
-                                self.insightSaveQueue.async { if let data = try? JSONEncoder().encode(cache) { try? data.write(to: url, options: .atomic) } }
+                                self.insightSaveQueue.async { if let data = try? JSONEncoder().encode(cache) { try? PrivateFile.write(data, to: url) } }
                                 self.rebuildSnapshot()
                             }
                             if let consent = self.automaticConsent {
@@ -1059,10 +1133,10 @@ final class AppModel: ObservableObject {
         var next = state
         if let key = editorConversationKey, key.provider == .claude,
            (try? ClaudeDesktopCodeTarget(conversationID: key.id)) != nil {
-            guard !catalogLoadFailed else { error = "Repair the catalog cache before hiding this recent session."; return }
+            guard !catalogLoadFailed else { reportTransientError("Repair the catalog cache before hiding this recent session."); return }
             var policy = catalog.effectivePolicy
             if !policy.excludedConversationIDs.contains(key) {
-                guard policy.excludedConversationIDs.count < 10_000 else { error = "Restore removed chats before hiding more sessions."; return }
+                guard policy.excludedConversationIDs.count < 10_000 else { reportTransientError("Restore removed chats before hiding more sessions."); return }
                 policy.excludedConversationIDs.append(key)
             }
             catalog.version = 2; catalog.policy = policy; saveCatalog()
@@ -1085,7 +1159,13 @@ final class AppModel: ObservableObject {
         do {
             let dotLink = dotLinkDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             let dotURL = dotLink.isEmpty ? nil : try DotTarget(dotLink).url
-            try changeShortcut?(shortcutDraft)
+            var shortcutProblem: String?
+            do { try changeShortcut?(shortcutDraft) }
+            catch where shortcutDraft == old {
+                // The unchanged shortcut is still taken by another app. Keep it and save the
+                // other settings anyway, such as turning observation or history off.
+                shortcutProblem = error.localizedDescription
+            }
             var next = state; next.shortcut = shortcutDraft; next.rememberRecents = rememberDraft
             next.dotLink = dotURL?.absoluteString
             if !rememberDraft || rememberDraft != state.rememberRecents { next.clearRecents(at: now()) }
@@ -1103,7 +1183,7 @@ final class AppModel: ObservableObject {
                 observesClaude = observeClaudeDraft
                 do {
                     let settings = try JSONEncoder().encode(["observeClaudeDesktop": observesClaude, "observeCodexDesktop": observesCodex, "navigationFirstCompass": navigationFirst])
-                    try settings.write(to: contextSettingsURL, options: .atomic)
+                    try PrivateFile.write(settings, to: contextSettingsURL)
                 } catch { self.error = "Context preference could not be saved." }
                 configureClaudeObserver(promptForPermission: newlyEnabledClaude)
                 configureCodexObserver(promptForPermission: newlyEnabledCodex)
@@ -1121,7 +1201,8 @@ final class AppModel: ObservableObject {
                     insights.retain(catalog: catalog); saveCatalog(); saveInsights(); rebuildSnapshot(adoptVisible: true)
                     refreshCatalog(force: true)
                 }
-                shortcutStatus = "Shortcut: \(next.shortcut.label)"; mode = .search
+                shortcutStatus = shortcutProblem ?? "Shortcut: \(next.shortcut.label)"; mode = .search
+                if let shortcutProblem { error = shortcutProblem }
             }
             else if old != shortcutDraft {
                 do { try changeShortcut?(old) }
@@ -1152,7 +1233,10 @@ final class AppModel: ObservableObject {
         let target = recentSessions.first { $0.id == id }?.destination ?? results.first { $0.id == id } ?? (visibleOrder ?? preparedOrder).first { $0.id == id }
             ?? catalog.merged(with: state).destinations.first { $0.id == id }
         if !next.destinations.contains(where: { $0.id == id }), next.rememberRecents,
-           let item = target, item.provider == .codex { next.destinations.append(item) }
+           var item = target, item.provider == .codex {
+            item.followsCatalogTitle = true // Shows Codex's current title, not a frozen copy.
+            next.destinations.append(item)
+        }
         next.recordDispatch(id, at: now())
         if next.rememberRecents, let item = next.destinations.first(where: { $0.id == id }) ?? target {
             // A saved dispatch can establish the prior selection even when its
@@ -1173,6 +1257,11 @@ final class AppModel: ObservableObject {
             let url = contextURL
             contextQueue.async { _ = try? ContextRepository(url: url).record(event, now: instant) }
         }
+        clearTransientError()
+        // The dispatched app is coming to the front. Until its activation arrives, the build
+        // started below must not see the old app in front, which would demote the chat
+        // just opened to "previous" and wipe the quick return built here.
+        if let target { frontApplication = .provider(target.provider) }
         _ = commit(next)
         if let target {
             let previous = context.previousDistinct(at: now())?.key ?? priorCurrent
@@ -1249,6 +1338,9 @@ final class AppModel: ObservableObject {
             claudeObserver = ClaudeDesktopObserver(onForeground: { [weak self] observation in
                 guard let self, self.observesClaude else { return }
                 self.receiveForeground(observation.key)
+            }, onLeftConversation: { [weak self] in
+                guard let self, self.observesClaude else { return }
+                self.receiveForegroundWithoutConversation(.claude)
             }) { [weak self] observation in
                 guard let self, !self.loadFailed, self.observesClaude, self.state.rememberRecents else { return }
                 self.contextReadGeneration += 1
@@ -1288,8 +1380,13 @@ final class AppModel: ObservableObject {
     /// only the Code route displayed in Claude; replace its previous route's sample.
     func receiveClaudeStatus(_ sample: LiveSessionState?) {
         let instant = now()
-        var changed = attention.disconnect(source: ClaudeDesktopStatus.source, at: sample?.observedAt ?? instant)
-        if let sample { changed = attention.accept(sample, now: instant) || changed }
+        // Polled every two seconds. Rebuild only when the shown status changes, not
+        // each time the same status is reported again.
+        let changed = updateLiveAttention { attention in
+            attention.disconnect(source: ClaudeDesktopStatus.source, at: sample?.observedAt ?? instant)
+            if let sample { attention.accept(sample, now: instant) }
+            return false
+        }
         if changed { rebuildSnapshot() }
     }
     func receiveClaudeReply(_ time: ClaudeReplyTime, for key: ConversationKey) {
@@ -1329,6 +1426,12 @@ final class AppModel: ObservableObject {
         let cancel = cancelRanking
         let timeout = DispatchWorkItem { cancel?() }; rankingTimeout = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: timeout)
+    }
+    /// Quitting: stop the observers, which also returns Codex's accessibility setting, and
+    /// wait for queued saves so a change made just before Quit is kept.
+    func prepareForTermination() {
+        claudeObserver?.stop(); claudeStatusObserver?.stop(); codexObserver?.stop()
+        contextQueue.sync {}; insightSaveQueue.sync {}; catalogSaveQueue.sync {}
     }
     deinit {
         attentionTimer?.invalidate()

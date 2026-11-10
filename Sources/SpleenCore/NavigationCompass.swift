@@ -46,8 +46,17 @@ public struct NavigationCompass {
 
     public func visibleEntries(now: Date, uptime: TimeInterval, limit: Int = 5) -> [Entry] {
         guard limit > 0 else { return [] }
-        // Fail closed on stale/clock-rewound history; pins remain explicit choices.
-        let eligible = recents.isFresh(now: now, uptime: uptime) ? entries : entries.filter { $0.reason == .pinned }
+        let eligible: [Entry]
+        if recents.isFresh(now: now, uptime: uptime) {
+            eligible = entries
+        } else if recents.clockMovedBackwards(now: now, uptime: uptime) {
+            // Fail closed on clock-rewound history; pins remain explicit choices.
+            eligible = entries.filter { $0.reason == .pinned }
+        } else {
+            // Each interaction expires on its own; the rest stay until the next rebuild.
+            let retained = Set(recents.visibleEntries(now: now, uptime: uptime).map(\.destination.conversationKey))
+            eligible = entries.filter { $0.reason == .pinned || $0.destination.pinned || retained.contains($0.destination.conversationKey) }
+        }
         return Array(eligible.prefix(limit))
     }
 }

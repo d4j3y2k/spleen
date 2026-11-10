@@ -95,7 +95,10 @@ public struct PreparedContext {
              visits.entries.map(\.observedAt) + state.destinations.compactMap(\.lastOpenedAt) +
              [context.currentHint(at: now)?.observedAt].compactMap { $0 })
                 .map { $0.addingTimeInterval(ContextMemory.hintLifetime) }.filter { $0 > now }) : []
-        let deadlines = dates.union((attention.liveExpirationDates + attention.recentActivityExpirationDates).filter { $0 > now })
+        // Live samples are refreshed every few seconds and lapse only when their producer
+        // stops; the app's heartbeat rebuilds then. Scheduling a boundary per sample made
+        // every refresh expire this context and force a full rebuild.
+        let deadlines = dates.union(attention.recentActivityExpirationDates.filter { $0 > now })
         boundaries = deadlines.sorted().map { date in
             (date, uptime + date.timeIntervalSince(now), RelevanceSnapshot(state: state, catalog: catalog,
                 insights: insights, context: context, now: date, claudeRecents: visits, attention: attention))
@@ -143,6 +146,6 @@ public enum CatalogPersistence {
             do { _ = try CatalogCache.load(from: url) }
             catch { throw CatalogPersistenceError.corruptExisting }
         }
-        try Data(contentsOf: staging).write(to: url, options: .atomic)
+        try PrivateFile.write(Data(contentsOf: staging), to: url)
     }
 }

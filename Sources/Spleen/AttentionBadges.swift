@@ -67,6 +67,9 @@ struct WorkingStatus: View {
     }
 }
 
+/// Running blink timers, for the native self-test.
+enum WorkingDotDiagnostics { static var activeTimers = 0 }
+
 /// Draw the blink natively so it does not depend on SwiftUI animation playback
 /// in a nonactivating panel. Removing the dot also stops its timer.
 private struct BlinkingWorkingDot: NSViewRepresentable {
@@ -77,11 +80,25 @@ private struct BlinkingWorkingDot: NSViewRepresentable {
     final class ActivityDotView: NSView {
         private var bright = true
         private var timer: Timer?
+        private var occlusion: NSObjectProtocol?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             stop()
-            guard window != nil else { return }
+            if let occlusion { NotificationCenter.default.removeObserver(occlusion); self.occlusion = nil }
+            guard let window else { return }
+            // Dismissal orders the panel out without removing this view, so blink only
+            // while the window is on screen; otherwise a working session wakes a hidden app.
+            occlusion = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                               object: window, queue: .main) { [weak self] _ in self?.updateBlinking() }
+            updateBlinking()
+        }
+
+        private func updateBlinking() {
+            guard let window, window.occlusionState.contains(.visible) else {
+                stop(); bright = true; return
+            }
+            guard timer == nil else { return }
             bright = true
             needsDisplay = true
             let clock = Timer(timeInterval: 0.65, repeats: true) { [weak self] _ in
@@ -89,7 +106,9 @@ private struct BlinkingWorkingDot: NSViewRepresentable {
                 self.bright.toggle()
                 self.needsDisplay = true
             }
+            clock.tolerance = 0.05
             timer = clock
+            WorkingDotDiagnostics.activeTimers += 1
             RunLoop.main.add(clock, forMode: .common)
         }
 
@@ -98,7 +117,14 @@ private struct BlinkingWorkingDot: NSViewRepresentable {
             NSBezierPath(ovalIn: bounds).fill()
         }
 
-        func stop() { timer?.invalidate(); timer = nil }
-        deinit { timer?.invalidate() }
+        func stop() {
+            guard let timer else { return }
+            timer.invalidate(); self.timer = nil
+            WorkingDotDiagnostics.activeTimers -= 1
+        }
+        deinit {
+            stop()
+            if let occlusion { NotificationCenter.default.removeObserver(occlusion) }
+        }
     }
 }

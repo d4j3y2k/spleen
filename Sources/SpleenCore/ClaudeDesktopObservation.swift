@@ -44,6 +44,9 @@ public struct ClaudeDesktopObservation: Equatable {
         if cleanTitle.hasSuffix(suffix) { cleanTitle.removeLast(suffix.count) }
         cleanTitle = cleanTitle.components(separatedBy: .controlCharacters).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // While a page loads, its title is only the app's name. Recording that would
+        // replace a good earlier title, so it counts as no title.
+        if cleanTitle == "Claude" || cleanTitle == "Claude Code" { cleanTitle = "" }
         var result = ""
         var outputBytes = 0
         for character in cleanTitle.prefix(Self.maximumTitleCharacters) {
@@ -53,6 +56,15 @@ public struct ClaudeDesktopObservation: Equatable {
             outputBytes += width
         }
         self.title = result
+    }
+
+    /// A Claude page that is positively not a conversation: a new chat, projects or
+    /// settings. Unfamiliar or unsupported conversation URLs are not this; they stay unknown.
+    public static func isOtherClaudePage(url: String) -> Bool {
+        guard url.utf8.count <= 512 else { return false }
+        let raw = url.hasPrefix("claude.ai/") ? "https://" + url : url
+        guard raw.hasPrefix("https://claude.ai/"), ClaudeDesktopObservation(url: url, title: "") == nil else { return false }
+        return !raw.hasPrefix("https://claude.ai/chat/") && !raw.hasPrefix("https://claude.ai/epitaxy/")
     }
 }
 
@@ -74,13 +86,25 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
     private var delivered: ClaudeDesktopObservation?
     private var committed = false
     private var latestStarted: Ticket?
+    /// The read that started the current route's dwell. A timer left over from an earlier
+    /// visit to the same route (A, B, then A again) must not commit it early.
+    private var acceptedTicket: Ticket?
 
     public init() {}
 
     /// Call immediately on activation changes, stop, detach, or lost permission.
     public func invalidate() {
         lock.lock(); defer { lock.unlock() }
-        generation = UUID(); pending = nil; delivered = nil; committed = false; latestStarted = nil
+        generation = UUID(); pending = nil; delivered = nil; committed = false; latestStarted = nil; acceptedTicket = nil
+    }
+
+    /// The app is in front showing no conversation. Returning to the previous route is then
+    /// a new arrival. True while this read is still the latest one.
+    public func clearDelivery(for ticket: Ticket) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard ticket.generation == generation, latestStarted == ticket else { return false }
+        delivered = nil; committed = false; acceptedTicket = nil
+        return true
     }
 
     public func requestRead() -> Ticket? {
@@ -115,7 +139,7 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
             if !committed, delivered != observation { delivered = observation }
             return false
         }
-        delivered = observation; committed = false
+        delivered = observation; committed = false; acceptedTicket = ticket
         return true
     }
 
@@ -125,7 +149,8 @@ public final class ClaudeDesktopObservationGate: @unchecked Sendable {
     /// or a newer route intervened, or the route was already committed.
     public func commitDwell(_ observation: ClaudeDesktopObservation, for ticket: Ticket) -> ClaudeDesktopObservation? {
         lock.lock(); defer { lock.unlock() }
-        guard ticket.generation == generation, !committed, let delivered, delivered.key == observation.key else { return nil }
+        guard ticket.generation == generation, ticket == acceptedTicket, !committed,
+              let delivered, delivered.key == observation.key else { return nil }
         committed = true
         return delivered
     }

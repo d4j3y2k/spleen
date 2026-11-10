@@ -114,6 +114,14 @@ func runReturnReadinessTests() -> (passed: Int, failures: [String]) {
         check(wait { !model.indexing }, "front-application fixture settles again")
         model.prepare()
         check(model.compassItems.last?.id == claude.id, "the fronted chat is current again once its application is in front")
+        // Claude showing a new chat or projects page: the chat just left is not current,
+        // so it is offered instead of ranking last.
+        model.endPresentation(); clock.advance(); model.receiveForegroundWithoutConversation(.claude)
+        check(wait { !model.indexing }, "no-conversation fixture settles")
+        model.prepare()
+        check(model.compassItems.contains(where: { $0.id == claude.id }) && model.compassItems.last?.id != claude.id,
+              "a chat left for a page that is not a conversation is offered, not hidden as current: \(model.compassItems.map(\.title))")
+        check(model.context.currentHint(at: clock.wall)?.key == b.conversationKey, "leaving a chat records no interaction")
         model.endPresentation()
 
         let staleDirectory = root.appendingPathComponent("stale-read")

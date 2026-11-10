@@ -67,6 +67,10 @@ public struct Destination: Codable, Equatable, Identifiable {
     public var pinned: Bool
     public var lastOpenedAt: Date?
     public var provider: ContextProvider
+    /// True for a discovered chat saved because it was opened: it shows Codex's current
+    /// title. False for a title typed in the editor. Nil for entries saved before this was
+    /// recorded, until `SavedState.adoptCatalogTitles` can tell.
+    public var followsCatalogTitle: Bool?
     public var conversationKey: ConversationKey { ConversationKey(provider: provider, id: threadID) }
     public var navigationURL: URL {
         get throws {
@@ -78,10 +82,12 @@ public struct Destination: Codable, Equatable, Identifiable {
             }
         }
     }
-    public init(id: UUID = UUID(), title: String, threadID: String, pinned: Bool = false, lastOpenedAt: Date? = nil, provider: ContextProvider = .codex) {
+    public init(id: UUID = UUID(), title: String, threadID: String, pinned: Bool = false, lastOpenedAt: Date? = nil, provider: ContextProvider = .codex,
+                followsCatalogTitle: Bool? = nil) {
         self.id = id; self.title = title; self.threadID = threadID; self.pinned = pinned; self.lastOpenedAt = lastOpenedAt; self.provider = provider
+        self.followsCatalogTitle = followsCatalogTitle
     }
-    private enum CodingKeys: String, CodingKey { case id, title, threadID, pinned, lastOpenedAt, provider }
+    private enum CodingKeys: String, CodingKey { case id, title, threadID, pinned, lastOpenedAt, provider, followsCatalogTitle }
     public init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         id = try fields.decode(UUID.self, forKey: .id)
@@ -90,6 +96,13 @@ public struct Destination: Codable, Equatable, Identifiable {
         pinned = try fields.decode(Bool.self, forKey: .pinned)
         lastOpenedAt = try fields.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
         provider = try fields.decodeIfPresent(ContextProvider.self, forKey: .provider) ?? .codex
+        followsCatalogTitle = try fields.decodeIfPresent(Bool.self, forKey: .followsCatalogTitle)
+    }
+    /// Whether the title follows Codex is bookkeeping about the title, not part of what the
+    /// destination is: the same chat compares equal before and after that is recorded.
+    public static func == (a: Destination, b: Destination) -> Bool {
+        a.id == b.id && a.title == b.title && a.threadID == b.threadID && a.pinned == b.pinned &&
+            a.lastOpenedAt == b.lastOpenedAt && a.provider == b.provider
     }
 }
 
@@ -147,8 +160,10 @@ public struct SavedState: Codable, Equatable {
         guard !pinned || destinations.filter({ $0.pinned && $0.id != id }).count < 2 else { throw SpleenError.tooManyPins }
         if let id, let i = destinations.firstIndex(where: { $0.id == id }) {
             if destinations[i].conversationKey != key { destinations[i].lastOpenedAt = nil }
+            // A title typed here is a label to keep; an unchanged one keeps following Codex.
+            if destinations[i].title != title || destinations[i].conversationKey != key { destinations[i].followsCatalogTitle = false }
             destinations[i].title = title; destinations[i].threadID = targetID; destinations[i].provider = provider; destinations[i].pinned = pinned
-        } else { destinations.append(Destination(title: title, threadID: targetID, pinned: pinned, provider: provider)) }
+        } else { destinations.append(Destination(title: title, threadID: targetID, pinned: pinned, provider: provider, followsCatalogTitle: false)) }
         if provider == .claude { version = max(version, targetID.hasPrefix("desktop-code:") ? 3 : 2) }
     }
     public mutating func remove(_ id: UUID) { destinations.removeAll { $0.id == id } }
@@ -156,8 +171,35 @@ public struct SavedState: Codable, Equatable {
         guard rememberRecents, let i = destinations.firstIndex(where: { $0.id == id }) else { return }
         destinations[i].lastOpenedAt = date
     }
+    /// Codex's generated titles, which nobody types as a label.
+    static func isPlaceholderTitle(_ title: String) -> Bool {
+        title.hasPrefix("Untitled chat · ") || title.hasPrefix("Codex · ")
+    }
+    /// Discovered chats saved because they were opened show Codex's current title, so a
+    /// rename in Codex appears here too; a title typed in the editor is kept. Entries saved
+    /// before that was recorded follow only when nothing suggests a label: created from the
+    /// catalog, and still matching it or a generated placeholder. Returns whether anything changed.
+    public mutating func adoptCatalogTitles(from catalog: CatalogCache) -> Bool {
+        let entries = Dictionary(catalog.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var changed = false
+        for i in destinations.indices where destinations[i].provider == .codex {
+            guard let entry = entries[destinations[i].threadID] else { continue }
+            if destinations[i].followsCatalogTitle == nil {
+                destinations[i].followsCatalogTitle = destinations[i].id == entry.destination.id &&
+                    (destinations[i].title == entry.title || Self.isPlaceholderTitle(destinations[i].title))
+                changed = true
+            }
+            if destinations[i].followsCatalogTitle == true, destinations[i].title != entry.title,
+               !entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                destinations[i].title = entry.title; changed = true
+            }
+        }
+        return changed
+    }
     public mutating func clearRecents(at date: Date = Date()) {
         recentHistoryClearedAt = date
+        // Chats saved only because they were opened are navigation history too.
+        destinations.removeAll { $0.followsCatalogTitle == true && !$0.pinned }
         for i in destinations.indices { destinations[i].lastOpenedAt = nil }
     }
     public func results(query: String, now: Date = Date()) -> [Destination] {
@@ -192,9 +234,8 @@ public final class StateRepository {
     }
     public func save(_ state: SavedState) throws {
         try state.validate()
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(state).write(to: url, options: .atomic)
+        try PrivateFile.write(encoder.encode(state), to: url)
     }
 }
 

@@ -41,7 +41,9 @@ public struct DiscoveryPolicy: Codable, Equatable {
     }
     private static func canonical(_ path: String) -> String? {
         guard path.hasPrefix("/"), !path.contains("\0") else { return nil }
-        return URL(fileURLWithPath: path).standardizedFileURL.path
+        // Called for every catalog entry on each snapshot build. Without `isDirectory`,
+        // Foundation checks the disk (lstat) on every call; the resulting path is the same.
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
     }
 
     private enum CodingKeys: String, CodingKey {

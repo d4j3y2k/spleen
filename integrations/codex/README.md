@@ -16,7 +16,7 @@ python3 scripts/install-activity-reports.py \
   --executable "$PWD/build/Spleen.app/Contents/MacOS/Spleen"
 ```
 
-After reviewing the script and example hooks, run the same command with `--install`, then enable Spleen's metadata journal:
+After reviewing the script and the [hook definitions it adds](activity-hooks.json.example), run the same command with `--install`, then enable Spleen's metadata journal:
 
 ```sh
 python3 scripts/install-activity-reports.py \
@@ -25,9 +25,35 @@ python3 scripts/install-activity-reports.py \
 ./build/Spleen.app/Contents/MacOS/Spleen --data-dir "$PWD/.local-state" --enable-activity-reports
 ```
 
-These paths match `scripts/run.sh`. For a directly launched app, use its actual data directory and executable instead. The installer defaults to `~/.codex`; pass `--codex-home /absolute/config-directory` if your Codex configuration is elsewhere. It preserves other hook handlers and the existing notification command, and saves private timestamped backups in the chosen data directory. Unsupported configuration shapes are rejected before installation.
+These paths match `scripts/run.sh`. For a directly launched app, use its actual data directory and executable instead. The installer defaults to `~/.codex`; pass `--codex-home /absolute/config-directory` if your Codex configuration is elsewhere. It keeps other hook handlers and your existing `notify` command, and prints that command and the backup folder when it finishes. Unsupported configuration shapes, such as a `notify` setting split over several lines, are rejected before anything changes.
 
 Finally, use Codex's **Review hooks** or **Settings → Hooks** to review and trust the new exact definitions. Installation alone does not trust them. Existing sessions may need to be reopened to load the hooks. See [coverage and expiry limits](../../docs/LIVE_INDICATORS.md); the historical verification there is not setup performed on a fresh checkout.
+
+### What the installer writes
+
+Everything goes in the Codex home, outside the checkout:
+
+- `hooks.json` gains one handler for each of twelve lifecycle events. Each runs `<executable> --activity-event codex --data-dir <data-dir>` with a two-second timeout, exactly as in [`activity-hooks.json.example`](activity-hooks.json.example). Other handlers stay as they are.
+- The root `notify` in `config.toml` becomes `["/usr/bin/python3", "<codex-home>/spleen-activity/notify-forwarder.py"]`. The forwarder reports each completed turn to Spleen, then runs your previous `notify` command with the same arguments, environment, output and exit status. A missing, failing or slow Spleen never stops that command.
+- `spleen-activity/` holds the forwarder, `forwarding.json` with your previous `notify` command and the Spleen command, and `backups/<UTC time>/` with copies of `config.toml`, `hooks.json` and any replaced `forwarding.json` from before each change. The folders and files are private to your account.
+
+If `config.toml` or `hooks.json` is a symbolic link, for example into a dotfiles repository, the file it points to is updated and the link is kept.
+
+### Switch data directories or uninstall
+
+To send reports to another Spleen, such as a directly launched app, run the installer again with its `--data-dir` and `--executable`. It replaces every earlier Spleen hook handler, whatever paths it names, and keeps the single forwarder and the `notify` command it wraps, so no event is delivered twice. The changed hook commands need Codex's review again. Running the installer again with the same paths changes nothing.
+
+To remove the integration, preview with `--uninstall --dry-run`, then run:
+
+```sh
+python3 scripts/install-activity-reports.py --uninstall
+```
+
+This restores your previous `notify` command, or removes the line if you had none, removes Spleen's hook handlers and deletes the forwarder and `forwarding.json`. It backs up the current files first, prints what it restored and keeps every backup; delete `spleen-activity/` yourself when you no longer need them. Uninstalling needs no `--data-dir` or `--executable`, only `--codex-home` if you installed elsewhere, and it leaves Spleen's own data directory alone.
+
+Deleting the checkout, or running `git clean -xdf`, keeps your `notify` working: the forwarder skips Spleen once its executable is gone and still runs your command. The twelve hooks would keep pointing at the missing executable, so uninstall first, or afterwards from a fresh clone.
+
+Earlier versions of the installer kept the forwarder and backups in `<data-dir>/activity-integration/`. Installing or uninstalling again recognizes that layout, also when several installs were stacked: it recovers your original `notify` command, removes the old forwarder files and keeps their backups. If that folder is already gone, the script changes nothing and lists the backups that may show your earlier `notify` line. Set it back in `config.toml` by hand, then run the script again.
 
 ## Context metadata hook
 

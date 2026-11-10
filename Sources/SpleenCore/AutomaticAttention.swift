@@ -51,11 +51,20 @@ public enum AutomaticAttention {
     private static let patterns: [NSRegularExpression] = [
         #"(?<![0-9])[0-9]{3}[- ]?[0-9]{2}[- ]?[0-9]{4}(?![0-9])"#,
         #"(?i)\bsk-(?:proj-|svcacct-)?[a-z0-9_-]{12,}"#,
-        #"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----"#,
+        // RSA, OpenSSH, encrypted and PGP ("... PRIVATE KEY BLOCK") private keys.
+        #"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"#,
         #"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16})\b"#,
         #"\b(?:xox[baprs]-[A-Za-z0-9-]{12,}|AIza[A-Za-z0-9_-]{20,})\b"#,
-        #"(?i)\b(?:password|passwd|pwd|api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|secret[_ -]?key|secret[_ -]?token|OPENAI_API_KEY)\b[\"']?\s*(?:=|:)\s*[\"']?[^\s\"'`,;]{4,}"#,
+        // Credential labels, also as .env names with a prefix: `_` is a word character, so
+        // `\b` never matched inside DB_PASSWORD= or AWS_SECRET_ACCESS_KEY=.
+        #"(?i)(?<![a-z0-9])(?:[a-z0-9]+_)*(?:password|passwd|pwd|api[_ -]?key|apikey|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|auth[_ -]?token|secret[_ -]?(?:access[_ -]?)?key|secret[_ -]?token|private[_ -]?key|OPENAI_API_KEY)\b[\"']?\s*(?:=|:)\s*[\"']?[^\s\"'`,;]{4,}"#,
+        // .env names ending in _TOKEN, _SECRET or _PASS, such as GITHUB_TOKEN= or SLACK_BOT_TOKEN=.
+        #"(?i)(?<![a-z0-9])[a-z0-9]+(?:_[a-z0-9]+)*_(?:token|secret|pass)\b[\"']?\s*(?:=|:)\s*[\"']?[^\s\"'`,;]{4,}"#,
         #"(?i)\b(?:authorization\s*:\s*)?bearer\s+[a-z0-9._~+/-]{12,}={0,2}"#,
-        #"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#
+        #"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#,
+        // Stripe secret and restricted keys, npm tokens, and a password inside a URL.
+        #"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}"#,
+        #"\bnpm_[A-Za-z0-9]{36}\b"#,
+        #"(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@"#
     ].map { try! NSRegularExpression(pattern: $0) }
 }

@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hotkey: HotKey!
     var statusItem: NSStatusItem!
     private var openItem: NSMenuItem?
+    private var terminationSignal: DispatchSourceSignal?
     /// Shows the shortcut on the menu bar item and its Open command. This is display only:
     /// the status menu is not the main menu, so AppKit never dispatches this key equivalent.
     /// The hotkey itself is registered separately.
@@ -69,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let directory = spleenDataDirectory(arguments)
+        // Earlier builds could create it 0755, so other local accounts could read excerpts.
+        try? PrivateFile.restrict(directory)
         let mainMenu = NSMenu()
         let appItem = NSMenuItem(title: "Spleen", action: nil, keyEquivalent: "")
         let appMenu = NSMenu(title: "Spleen")
@@ -80,7 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             editMenu.addItem(withTitle: title, action: Selector(selector), keyEquivalent: key)
         }
         editItem.submenu = editMenu; mainMenu.addItem(editItem); NSApp.mainMenu = mainMenu
-        let folders = arguments.firstIndex(of: "--catalog-folder").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }.map { [$0] } ?? []
+        // Same rules as the diagnostics: up to ten absolute folders, all of them used.
+        let folders = diagnosticCatalogFolders(arguments) ?? []
+        if folders.isEmpty && arguments.contains("--catalog-folder") {
+            print("Ignoring --catalog-folder: each value must be an absolute folder path, at most ten.")
+        }
         var assessmentTransport: DecisionsTransport?
         var automaticConsent: AutomaticAttentionConsent?
         // A standing opt-in that cannot start must say so in Settings rather than silently showing "Off".
@@ -110,6 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              })
         controller = PanelController(model: model)
         model.startFrontApplicationTracking()
+        // scripts/run.sh restarts a running copy with SIGTERM: quit as if from the menu,
+        // so pending saves finish and observers clean up.
+        signal(SIGTERM, SIG_IGN)
+        let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        termination.setEventHandler { NSApplication.shared.terminate(nil) }
+        termination.resume(); terminationSignal = termination
         hotkey = HotKey()
         hotkey.onPress = { [weak self] in trace("hotkey.received"); self?.controller.toggle() }
         model.changeShortcut = { [weak self] shortcut in
@@ -136,11 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func show() { controller.present() }
     @objc func openDot() { controller.openDot() }
-    @objc func search() { controller.present(); controller.model.beginSearch() }
-    @objc func add() { controller.present(); controller.model.edit() }
-    @objc func settings() { controller.present(); controller.model.showSettings() }
+    @objc func search() { controller.presentSearch() }
+    @objc func add() { controller.presentEditor() }
+    @objc func settings() { controller.presentSettings() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
-    func applicationWillTerminate(_ notification: Notification) { flushDiagnosticTrace() }
+    func applicationWillTerminate(_ notification: Notification) {
+        controller?.model.prepareForTermination()
+        flushDiagnosticTrace()
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         trace("application.reopen"); controller?.present(); return true
     }

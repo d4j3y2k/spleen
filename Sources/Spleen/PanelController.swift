@@ -74,7 +74,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main) { [weak self] note in
-                guard let self, self.session.isPresented,
+                // A consent or key-file dialog stays up while the user switches apps (to chmod
+                // the key file, say); dismissing would hide its outcome, as windowDidResignKey knows.
+                guard let self, self.session.isPresented, !self.model.isPresentingModal,
                       let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                       app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
                       app.processIdentifier != self.session.priorPID else { return }
@@ -122,6 +124,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                         let previous = model.selectedID
                         model.navigateCompass(direction)
                         traceNavigation(diagnosticKey, previous == model.selectedID ? "compass.unchanged" : "compass.moved")
+                        announceSelection(from: previous)
                     } else {
                         traceNavigation(diagnosticKey, "ignore.repeat")
                     }
@@ -155,14 +158,27 @@ final class PanelController: NSObject, NSWindowDelegate {
             return event
         }
         switch event.keyCode {
-        case 125: traceNavigation(diagnosticKey, "search.navigate"); model.move(1); return nil
-        case 126: traceNavigation(diagnosticKey, "search.navigate"); model.move(-1); return nil
+        case 125, 126:
+            traceNavigation(diagnosticKey, "search.navigate")
+            let previous = model.selectedID
+            model.move(event.keyCode == 125 ? 1 : -1)
+            announceSelection(from: previous)
+            return nil
         case 36, 76:
             traceNavigation(diagnosticKey, event.isARepeat ? "ignore.repeat" : "search.confirm")
             if !event.isARepeat { model.openSelected() }
             return nil
         default: traceNavigation(diagnosticKey, "pass.native"); return event
         }
+    }
+    /// Arrow keys move the selection without moving VoiceOver's focus, so say what is now selected.
+    private func announceSelection(from previous: UUID?) {
+        guard NSWorkspace.shared.isVoiceOverEnabled, model.selectedID != previous,
+              let item = (model.compassItems + model.results + model.recentSessions.map(\.destination)).first(where: { $0.id == model.selectedID })
+        else { return }
+        NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
+            .announcement: "\(item.title), \(item.provider.displayName)",
+            .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
     static func startsSearch(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.intersection([.command, .control]).isEmpty,
@@ -184,10 +200,22 @@ final class PanelController: NSObject, NSWindowDelegate {
         let size = mode == .compass ? CompassLayout.size : SpleenStyle.managementSize
         guard panel.frame.size != size else { return }
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-        panel.setFrame(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
-                              width: size.width, height: size.height), display: session.isPresented, animate: false)
+        var origin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
+        if let frame = (panel.screen ?? NSScreen.main)?.visibleFrame { origin = Self.clamp(origin, size: size, in: frame) }
+        panel.setFrame(NSRect(origin: origin, size: size), display: session.isPresented, animate: false)
+    }
+    /// Keeps the panel inside the screen's visible frame. A panel larger than the screen
+    /// keeps its top-left corner visible, so the header and first choices stay reachable.
+    static func clamp(_ origin: NSPoint, size: NSSize, in frame: NSRect) -> NSPoint {
+        NSPoint(x: min(max(origin.x, frame.minX), max(frame.minX, frame.maxX - size.width)),
+                y: min(max(origin.y, frame.minY), frame.maxY - size.height))
     }
     func toggle() { session.isPresented ? dismiss(.cancel) : present() }
+    /// Menu-bar entry points that open something other than the compass. Its cards are
+    /// never on screen there, so these never assess them.
+    func presentSearch() { present(assessOnOpen: false); model.beginSearch() }
+    func presentEditor() { present(assessOnOpen: false); model.edit() }
+    func presentSettings() { present(assessOnOpen: false); model.showSettings() }
     func present(reset: Bool = true, orderFront: Bool = true, assessOnOpen: Bool = true) {
         guard !session.isPresented else {
             if orderFront && !panel.isKeyWindow {
@@ -202,7 +230,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         session.present(priorPID: currentPID())
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         if let frame = screen?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2 + 50))
+            panel.setFrameOrigin(Self.clamp(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2 + 50),
+                                            size: panel.frame.size, in: frame))
         }
         if orderFront { panel.makeKeyAndOrderFront(nil) }
         trace("panel.presented")
@@ -260,17 +289,17 @@ final class PanelController: NSObject, NSWindowDelegate {
             }
             else {
                 trace("dispatch.rejected")
-                model.error = "Couldn’t open this conversation. Check the app or edit its saved link."
+                model.reportTransientError("Couldn’t open this conversation. Check the app or edit its saved link.")
                 present(reset: false)
                 // A rejected open is the same invocation, including cancellation's
                 // original focus target and the exact visible choice order.
                 session.present(priorPID: priorPID)
             }
-        } catch { model.error = error.localizedDescription }
+        } catch { model.reportTransientError(error.localizedDescription) }
     }
     func openDot() {
         guard let target = model.dotURL else {
-            if !session.isPresented { present() }
+            if !session.isPresented { present(assessOnOpen: false) } // Shows Settings, not cards.
             model.showSettings()
             return
         }
@@ -281,7 +310,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             model.endPresentation()
         } else {
             trace("dot.dispatch.rejected")
-            model.error = "Couldn’t open your Dot. Check its link in Settings."
+            model.reportTransientError("Couldn’t open your Dot. Check its link in Settings.")
             present(reset: false)
             session.present(priorPID: priorPID)
         }

@@ -54,4 +54,15 @@ final class NavigationCompassTests: XCTestCase {
         XCTAssertTrue(compass.visibleEntries(now: now, uptime: 99).isEmpty)
         XCTAssertTrue(compass.visibleEntries(now: now, uptime: 100, limit: 0).isEmpty)
     }
+    func testOneExpiredVisitKeepsNewerVisitsAndPins() {
+        var state = SavedState()
+        state.destinations = [
+            Destination(title: "Old", threadID: "thr_old", lastOpenedAt: now.addingTimeInterval(-ContextMemory.retention + 60)),
+            Destination(title: "New", threadID: "thr_new", lastOpenedAt: now.addingTimeInterval(-60)),
+            Destination(title: "Pin", threadID: "thr_pin", pinned: true, lastOpenedAt: now.addingTimeInterval(-ContextMemory.retention + 30))]
+        let compass = build(state)
+        XCTAssertEqual(compass.visibleEntries(now: now, uptime: 100).map(\.destination.threadID), ["thr_new", "thr_old", "thr_pin"])
+        XCTAssertEqual(compass.visibleEntries(now: now.addingTimeInterval(120), uptime: 220).map(\.destination.threadID), ["thr_new", "thr_pin"],
+                       "the oldest visit expiring must not empty the compass before the next rebuild")
+    }
 }

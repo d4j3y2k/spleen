@@ -114,4 +114,20 @@ final class RecentSessionsTests: XCTestCase {
         XCTAssertEqual(entries.count, 64)
         XCTAssertEqual(entries.last?.destination.threadID, "thr_bound_63")
     }
+
+    func testOldestExpiryKeepsNewerEntriesAndRewindFailsClosed() {
+        var state = SavedState()
+        state.destinations = [
+            Destination(title: "Old", threadID: "thr_old", lastOpenedAt: now.addingTimeInterval(-ContextMemory.retention + 60)),
+            Destination(title: "New", threadID: "thr_new", lastOpenedAt: now.addingTimeInterval(-7200))]
+        let recents = snapshot(state)
+        XCTAssertEqual(recents.visibleEntries(now: now, uptime: 100).map(\.destination.threadID), ["thr_new", "thr_old"])
+        let later = now.addingTimeInterval(120)
+        XCTAssertFalse(recents.isFresh(now: later, uptime: 220), "the oldest entry expired, so a rebuild is due")
+        XCTAssertEqual(recents.visibleEntries(now: later, uptime: 220).map(\.destination.threadID), ["thr_new"],
+                       "one expiry must not empty the list")
+        XCTAssertEqual(recents.visibleEntries(now: now.addingTimeInterval(30), uptime: 220).map(\.destination.threadID), ["thr_new"],
+                       "monotonic time still ages entries after a wall-clock adjustment")
+        XCTAssertTrue(recents.visibleEntries(now: now.addingTimeInterval(-1), uptime: 100).isEmpty, "a clock moved backwards fails closed")
+    }
 }

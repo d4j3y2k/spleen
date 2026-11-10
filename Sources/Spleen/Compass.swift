@@ -148,7 +148,7 @@ struct CompassView: View {
                 KeyboardHint(key: model.browsingRecents ? "←" : "→ →", label: model.browsingRecents ? "compass" : "browse")
                 Spacer(minLength: 0)
                 if !model.recentSessions.isEmpty {
-                    Text("\(model.recentSessions.count) sessions").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text(model.recentSessions.count == 1 ? "1 session" : "\(model.recentSessions.count) sessions").font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
             }.padding(.horizontal, 18).frame(height: 38)
         }

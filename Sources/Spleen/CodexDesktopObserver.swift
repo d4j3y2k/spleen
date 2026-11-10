@@ -61,6 +61,14 @@ final class CodexDesktopObserver {
     private var processID: pid_t?
     private var exposureProcessID: pid_t?
     private var exposureRetry = AccessibilityExposureRetry()
+    /// Codex processes where Spleen turned full accessibility on after reading it as off.
+    /// Chromium's accessibility tree costs Codex CPU, so stopping turns it back off.
+    private var exposedProcessIDs: Set<pid_t> = []
+    /// Attaching can fail while Codex is still launching. Retry with a backoff rather
+    /// than stopping observation until Settings is saved again.
+    private var attachFailures = 0
+    private var attachFailurePID: pid_t?
+    private var nextAttachAttempt: TimeInterval = 0
     private var registeredNotifications: [CFString] = []
     private let gate = CodexDesktopObservationGate()
     static let bundleID = "com.openai.codex"
@@ -142,6 +150,29 @@ final class CodexDesktopObserver {
         for token in workspaceTokens { NSWorkspace.shared.notificationCenter.removeObserver(token) }
         workspaceTokens.removeAll()
         detach()
+        restoreAccessibilityExposure()
+        attachFailures = 0; attachFailurePID = nil; nextAttachAttempt = 0
+    }
+
+    /// Turn off only what Spleen turned on, in Codex processes that are still running.
+    private func restoreAccessibilityExposure() {
+        for pid in exposedProcessIDs {
+            guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
+                  app.bundleIdentifier == Self.bundleID else { continue }
+            let target = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(target, 0.5)
+            _ = AXUIElementSetAttributeValue(target, "AXManualAccessibility" as CFString, kCFBooleanFalse)
+        }
+        exposedProcessIDs.removeAll()
+        // A later start must be able to turn it on again.
+        exposureProcessID = nil; exposureRetry = AccessibilityExposureRetry()
+    }
+
+    private func attachFailed() -> Bool {
+        count(\.attachmentFailures)
+        attachFailures += 1
+        nextAttachAttempt = ProcessInfo.processInfo.systemUptime + min(30, 0.5 * pow(2, Double(attachFailures - 1)))
+        return true // Stay armed; the recovery timer retries after the backoff.
     }
 
     deinit { stop() }
@@ -180,6 +211,10 @@ final class CodexDesktopObserver {
             return true
         }
         detach()
+        if attachFailurePID != active.processIdentifier {
+            attachFailurePID = active.processIdentifier; attachFailures = 0; nextAttachAttempt = 0
+        }
+        guard ProcessInfo.processInfo.systemUptime >= nextAttachAttempt else { return true }
         count(\.attachmentAttempts)
         let element = AXUIElementCreateApplication(active.processIdentifier)
         AXUIElementSetMessagingTimeout(element, 0.1)
@@ -191,7 +226,7 @@ final class CodexDesktopObserver {
             CodexObservationCallbacks.lookup(callbackID)?.notified(callbackID: callbackID)
         }
         guard AXObserverCreate(active.processIdentifier, callback, &created) == .success,
-              let created else { count(\.attachmentFailures); return false }
+              let created else { return attachFailed() }
         observer = created
         application = element
         processID = active.processIdentifier
@@ -205,8 +240,9 @@ final class CodexDesktopObserver {
                 count(\.registrationSuccesses)
             } else { count(\.registrationFailures) }
         }
-        guard !registeredNotifications.isEmpty else { count(\.attachmentFailures); detach(); return false }
+        guard !registeredNotifications.isEmpty else { detach(); return attachFailed() }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
+        attachFailures = 0; nextAttachAttempt = 0
         count(\.attachmentSuccesses)
         scheduleRead()
         return true
@@ -226,7 +262,12 @@ final class CodexDesktopObserver {
         let target = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(target, 0.5)
         count(\.accessibilityExposureRequests)
+        // Only a value read as off is ours to restore; never turn off another tool's setting.
+        var current: CFTypeRef?
+        let readOff = AXUIElementCopyAttributeValue(target, "AXManualAccessibility" as CFString, &current) == .success &&
+            current.map { CFGetTypeID($0) == CFBooleanGetTypeID() && !CFBooleanGetValue(($0 as! CFBoolean)) } == true
         let result = AXUIElementSetAttributeValue(target, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        if result == .success && readOff { exposedProcessIDs.insert(pid) }
         if result == .success { count(\.accessibilityExposureSuccesses) }
         else if diagnosticsEnabled { statistics.accessibilityExposureErrors[String(result.rawValue), default: 0] += 1 }
         let outcome: AccessibilityExposureRetry.Outcome

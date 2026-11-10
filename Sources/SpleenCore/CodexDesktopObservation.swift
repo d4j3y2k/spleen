@@ -23,6 +23,8 @@ public struct CodexDesktopObservation: Equatable {
         var clean = bounded.components(separatedBy: .controlCharacters).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         for suffix in [" - Codex", " - ChatGPT"] where clean.hasSuffix(suffix) { clean.removeLast(suffix.count) }
+        // A bare app name while the page loads is not a title.
+        if clean == "Codex" || clean == "ChatGPT" { clean = "" }
         var result = ""; bytes = 0
         for character in clean.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumTitleCharacters) {
             let width = String(character).utf8.count
@@ -51,13 +53,16 @@ public final class CodexDesktopObservationGate: @unchecked Sendable {
     private var delivered: CodexDesktopObservation?
     private var committed = false
     private var latestStarted: Ticket?
+    /// The read that started the current route's dwell. A timer left over from an earlier
+    /// visit to the same route (A, B, then A again) must not commit it early.
+    private var acceptedTicket: Ticket?
 
     public init() {}
 
     /// Call immediately on activation changes, stop, detach, or lost permission.
     public func invalidate() {
         lock.lock(); defer { lock.unlock() }
-        generation = UUID(); pending = nil; delivered = nil; committed = false; latestStarted = nil
+        generation = UUID(); pending = nil; delivered = nil; committed = false; latestStarted = nil; acceptedTicket = nil
     }
 
     public func requestRead() -> Ticket? {
@@ -92,7 +97,7 @@ public final class CodexDesktopObservationGate: @unchecked Sendable {
             if !committed, delivered != observation { delivered = observation }
             return false
         }
-        delivered = observation; committed = false
+        delivered = observation; committed = false; acceptedTicket = ticket
         return true
     }
 
@@ -102,7 +107,8 @@ public final class CodexDesktopObservationGate: @unchecked Sendable {
     /// or a newer route intervened, or the route was already committed.
     public func commitDwell(_ observation: CodexDesktopObservation, for ticket: Ticket) -> CodexDesktopObservation? {
         lock.lock(); defer { lock.unlock() }
-        guard ticket.generation == generation, !committed, let delivered, delivered.key == observation.key else { return nil }
+        guard ticket.generation == generation, ticket == acceptedTicket, !committed,
+              let delivered, delivered.key == observation.key else { return nil }
         committed = true
         return delivered
     }

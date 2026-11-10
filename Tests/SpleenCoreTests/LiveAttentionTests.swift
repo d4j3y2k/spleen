@@ -41,6 +41,22 @@ final class LiveAttentionTests: XCTestCase {
         XCTAssertEqual(after?.activity, .working)
         XCTAssertEqual(Set(value.liveExpirationDates), Set([start.addingTimeInterval(10), start.addingTimeInterval(23)]))
     }
+    func testSameFactsRefreshIsNotAPresentedChange() {
+        var value = SessionAttention()
+        accept(sample("runtime", time: 0, activity: .working, lifetime: 8), into: &value)
+        let before = value.presentedFacts
+        accept(sample("runtime", time: 2, sequence: 2, activity: .working, lifetime: 8), into: &value)
+        XCTAssertEqual(value.presentedFacts, before, "re-reporting the same facts needs no rebuild")
+        XCTAssertFalse(value.hasExpiredSamples(at: start.addingTimeInterval(9)), "the refresh extended the lifetime")
+        XCTAssertTrue(value.hasExpiredSamples(at: start.addingTimeInterval(10)))
+        accept(sample("runtime", time: 3, sequence: 3, activity: .idle, lifetime: 8), into: &value)
+        XCTAssertNotEqual(value.presentedFacts, before)
+        var suppressing = SessionAttention(); suppressing.validatedForSuppression = true
+        accept(sample("runtime", time: 0, activity: .working), into: &suppressing)
+        let timed = suppressing.presentedFacts
+        accept(sample("runtime", time: 2, sequence: 2, activity: .working), into: &suppressing)
+        XCTAssertNotEqual(suppressing.presentedFacts, timed, "suppression compares observation times, so they count")
+    }
     func testUnreadRefreshDoesNotKeepExpiredSpinner() {
         var value = SessionAttention()
         accept(sample("runtime", time: 0, activity: .working, lifetime: 5), into: &value)

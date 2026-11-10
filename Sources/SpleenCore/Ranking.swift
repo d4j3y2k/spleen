@@ -104,12 +104,12 @@ public struct RankingInput: Equatable {
             let note = entry.flatMap { entry in
                 notes[entry.id].flatMap { $0.folder == entry.folder && $0.updatedAt == entry.updatedAt ? $0 : nil }
             }
-            return RankingCandidate(destination, project: entry.map { URL(fileURLWithPath: $0.folder).lastPathComponent },
+            return RankingCandidate(destination, project: entry.map { URL(fileURLWithPath: $0.folder, isDirectory: true).lastPathComponent },
                 summary: note?.text, noteUpdatedAt: note?.updatedAt, redactor: redactor)
         }
         func hint(_ value: ContextHint?) -> Hint? {
             value.map { Hint(key: $0.key, project: $0.project.map {
-                redactor.shortText(URL(fileURLWithPath: $0).lastPathComponent, limit: 80)
+                redactor.shortText(URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent, limit: 80)
             }, topic: $0.topic.map { redactor.shortText($0, limit: 180) },
             observedAt: $0.observedAt, evidence: $0.evidence) }
         }
