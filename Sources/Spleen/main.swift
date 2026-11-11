@@ -100,6 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } else { assessmentTransport = try attentionTrialTransport(directory: directory, arguments: arguments) }
         }
+        catch is AutomaticAttentionConsent.SupersededScope {
+            assessmentTransport = nil; automaticConsent = nil
+            automaticSetupFailure = "Off: assessment on open now sends longer excerpts, up to 20,000 bytes per card instead of 6,000. Nothing is sent until you turn it on again."
+        }
         catch {
             assessmentTransport = nil; automaticConsent = nil
             if FileManager.default.fileExists(atPath: AutomaticAttentionConsent.location(directory).path) {

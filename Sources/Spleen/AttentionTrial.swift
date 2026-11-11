@@ -12,7 +12,8 @@ func attentionTrialTransport(directory: URL, arguments: [String]) throws -> Deci
     let manifest = try JSONDecoder().decode(AttentionTrialManifest.self, from: data)
     guard Date() < manifest.configuration.expiresAt else { throw DecisionsTrialError.expired }
     let key = try attentionCredential(at: URL(fileURLWithPath: arguments[credentialIndex + 1]))
-    let ledger = DecisionsTrialLedger(url: directory.appendingPathComponent("attention-trial-ledger.json"), configuration: manifest.configuration)
+    let ledger = DecisionsTrialLedger(url: directory.appendingPathComponent("attention-trial-ledger.json"), configuration: manifest.configuration,
+                                      requestByteLimit: SessionAssessmentInput.maximumRequestBytes)
     return ReviewedAttentionTransport(manifest: manifest, underlying: DecisionsHTTPTransport(approvedCredential: key, ledger: ledger))
 }
 

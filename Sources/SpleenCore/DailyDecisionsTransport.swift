@@ -12,19 +12,23 @@ public final class DailyDecisionsTransport: DecisionsTransport {
     private let session: URLSession?
     private let now: () -> Date
     private let requestTimeout: TimeInterval
+    private let requestByteLimit: Int
+    private let attemptsPerRequest: Int
     private let lock = NSLock()
     /// Yesterday's transport stays alive so a request in flight at midnight isn't cancelled.
     private var transports: [String: DecisionsHTTPTransport] = [:]
 
     public init(credential: String, directory: URL, consentID: String, dailyLimit: Int = 100,
                 calendar: Calendar = .current, session: URLSession? = nil,
-                now: @escaping () -> Date = Date.init, requestTimeout: TimeInterval = 5) throws {
+                now: @escaping () -> Date = Date.init, requestTimeout: TimeInterval = 5,
+                requestByteLimit: Int = DecisionsTrialLedger.maximumRequestBytes, attemptsPerRequest: Int = 1) throws {
         guard (1...100).contains(dailyLimit), !consentID.isEmpty, consentID.utf8.count <= 60,
               consentID.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil,
               directory.isFileURL else { throw DecisionsTrialError.invalidConfiguration }
         self.credential = credential; self.directory = directory; self.consentID = consentID
         self.dailyLimit = dailyLimit; self.calendar = calendar; self.session = session
         self.now = now; self.requestTimeout = requestTimeout
+        self.requestByteLimit = requestByteLimit; self.attemptsPerRequest = attemptsPerRequest
     }
 
     /// Local calendar day as yyyy-MM-dd, which also sorts chronologically.
@@ -49,7 +53,8 @@ public final class DailyDecisionsTransport: DecisionsTransport {
         lock.lock(); defer { lock.unlock() }
         if let existing = transports[today] { return existing }
         let configuration = try DecisionsTrialConfiguration(id: "\(consentID)-\(today)", maximumRequests: dailyLimit, expiresAt: end)
-        let ledger = DecisionsTrialLedger(url: directory.appendingPathComponent("\(consentID)-\(today).json"), configuration: configuration)
+        let ledger = DecisionsTrialLedger(url: directory.appendingPathComponent("\(consentID)-\(today).json"), configuration: configuration,
+                                          requestByteLimit: requestByteLimit, attemptsPerRequest: attemptsPerRequest)
         let transport = DecisionsHTTPTransport(approvedCredential: credential, ledger: ledger, session: session,
                                                now: now, requestTimeout: requestTimeout)
         transports = transports.filter { $0.key >= yesterday }

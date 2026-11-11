@@ -89,9 +89,69 @@ final class SessionAttentionTests: XCTestCase {
     func testEscapedUnicodePayloadCompactionIsBoundedAndCannotFinish() throws {
         let messages = (0..<6).map { RecentMessage(id: "\($0)", role: $0 % 2 == 0 ? .user : .assistant, text: String(repeating: "🧑🏽‍💻\"\\", count: 300)) }
         let input = SessionAssessmentInput(window: SessionWindow(key: item.conversationKey, sourceUpdatedAt: now, messages: messages))
-        XCTAssertLessThanOrEqual(try input.body().count, 6000)
+        XCTAssertLessThanOrEqual(try input.body().count, SessionAssessmentInput.maximumRequestBytes)
         XCTAssertEqual(try input.body(), try input.body())
         XCTAssertEqual(try input.result(response(.appearsFinished)).assessment, .unclear)
+    }
+    func testALongMessageKeepsItsBeginningAndEndingAndStaysAssessable() throws {
+        let long = "Opening summary. " + String(repeating: "detail ", count: 900) + "All checks pass and nothing remains."
+        let message = RecentMessage(id: "a1", role: .assistant, text: long)
+        XCTAssertTrue(message.truncated)
+        XCTAssertEqual(message.middleOmitted, true)
+        XCTAssertEqual(message.text.unicodeScalars.count, RecentMessage.maximumScalars)
+        XCTAssertTrue(message.text.hasPrefix("Opening summary. "))
+        XCTAssertTrue(message.text.hasSuffix("All checks pass and nothing remains."))
+        XCTAssertTrue(message.text.contains(RecentMessage.omissionMarker))
+        let window = SessionWindow(key: item.conversationKey, sourceUpdatedAt: now, messages: [
+            RecentMessage(id: "u1", role: .user, text: "Please implement the requested feature."), message])
+        XCTAssertFalse(window.incomplete)
+        XCTAssertFalse(window.needsRefetch)
+        let input = SessionAssessmentInput(window: window)
+        let payload = try JSONSerialization.jsonObject(with: input.body()) as! [String: Any]
+        let content = ((payload["input"] as! [[String: Any]])[0]["content"] as! [[String: Any]])[0]["data"] as! [String: Any]
+        XCTAssertEqual(content["incomplete"] as? Bool, false)
+        XCTAssertEqual((content["messages"] as! [[String: Any]])[1]["truncated"] as? Bool, true)
+        XCTAssertEqual(try input.result(response(.appearsFinished)).assessment, .appearsFinished)
+        XCTAssertEqual(AutomaticAttention.nextWindow(windows: [window], cachedVersions: [], attemptedVersions: [])?.key, window.key)
+        // The stored form round-trips, and an untruncated message encodes as it always did.
+        XCTAssertEqual(try JSONDecoder().decode(SessionWindow.self, from: JSONEncoder().encode(window)), window)
+        let short = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RecentMessage(id: "s", role: .user, text: "Short."))) as! [String: Any]
+        XCTAssertEqual(Set(short.keys), ["id", "role", "text", "truncated"])
+    }
+    func testSixFullLengthMessagesFitWithoutCompaction() throws {
+        let messages = (0..<6).map { RecentMessage(id: "\($0)", role: $0 % 2 == 0 ? .user : .assistant, text: String(repeating: "word ", count: 600)) }
+        let window = SessionWindow(key: item.conversationKey, sourceUpdatedAt: now, messages: messages)
+        XCTAssertFalse(window.incomplete)
+        let input = SessionAssessmentInput(window: window)
+        XCTAssertLessThanOrEqual(try input.body().count, SessionAssessmentInput.maximumRequestBytes)
+        XCTAssertEqual(try input.result(response(.appearsFinished)).assessment, .appearsFinished)
+    }
+    func testALongMessageHoldingASecretKeepsOnlyItsBeginningAndIsNeverSent() {
+        // The key sits where the ending would start, so a cut there would send its tail unrecognized.
+        let secret = "sk-proj-" + String(repeating: "k", count: 60)
+        let padding = String(repeating: "x ", count: 400)
+        let long = String(repeating: "detail ", count: 400) + padding + secret + String(repeating: " tail", count: 300)
+        let message = RecentMessage(id: "a1", role: .assistant, text: long)
+        XCTAssertTrue(message.truncated)
+        XCTAssertEqual(message.middleOmitted, false)
+        XCTAssertFalse(message.text.contains(RecentMessage.omissionMarker))
+        XCTAssertFalse(message.text.contains("kkkk"))
+        let window = SessionWindow(key: item.conversationKey, sourceUpdatedAt: now, messages: [
+            RecentMessage(id: "u1", role: .user, text: "Please implement the requested feature."), message])
+        XCTAssertTrue(window.incomplete)
+        XCTAssertFalse(window.needsRefetch) // Reading it again would give the same result.
+        XCTAssertNil(AutomaticAttention.nextWindow(windows: [window], cachedVersions: [], attemptedVersions: []))
+    }
+    func testWindowsCachedWithOnlyABeginningStayIncompleteUntilReadAgain() throws {
+        let legacy = Data(#"{"key":{"provider":"codex","id":"thr_attention_fixture"},"host":"local","sourceUpdatedAt":0,"incomplete":true,"messages":[{"id":"u1","role":"user","text":"Please implement it.","truncated":false},{"id":"a1","role":"assistant","text":"A beginning without its ending","truncated":true}]}"#.utf8)
+        let window = try JSONDecoder().decode(SessionWindow.self, from: legacy)
+        XCTAssertNil(window.messages[1].middleOmitted)
+        XCTAssertTrue(window.incomplete)
+        XCTAssertTrue(window.needsRefetch)
+        XCTAssertNil(AutomaticAttention.nextWindow(windows: [window], cachedVersions: [], attemptedVersions: []))
+        XCTAssertEqual(try SessionAssessmentInput(window: window).result(response(.appearsFinished)).assessment, .unclear)
+        // A caller that declares its own truncation is not trusted to have kept the ending.
+        XCTAssertTrue(RecentMessage(id: "c", role: .assistant, text: "Cut by the caller", truncated: true).losesEnding)
     }
     func testValidChoicesAndMalformedResponses() throws {
         let input = SessionAssessmentInput(window: window())

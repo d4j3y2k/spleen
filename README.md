@@ -103,7 +103,7 @@ The file stays on your Mac; requests use your key directly with OpenAI. Assessme
 Everything lives in a handful of JSON files in the data directory, which Spleen keeps readable only by your account:
 
 - `destinations.json`: saved labels, targets, pins, shortcut and the Dot link, plus each discovered Codex chat you open through Spleen. Those follow Codex's current title unless you relabel them, and **Clear history** forgets them unless they are pinned.
-- `catalog.json` and `relevance.json`: Codex thread metadata, three short excerpts per thread, and a window of up to six recent user and assistant messages per thread, each at most 2,400 characters, used for search, recognition and the optional assessment below.
+- `catalog.json` and `relevance.json`: Codex thread metadata, three short excerpts per thread, and a window of up to six recent user and assistant messages per thread, each at most 2,400 characters (a longer message keeps its beginning and its ending), used for search, recognition and the optional assessment below.
 - `context.json`: at most 64 recent navigation events, kept for 30 days.
 - `context-settings.json`: observation and compass-order preferences.
 - `activity-hooks.json`: when enabled, at most 128 lifecycle metadata events, kept for one hour. The optional reports keep their notification forwarder and private backups of your Codex configuration in `~/.codex/spleen-activity/`, outside the data directory.

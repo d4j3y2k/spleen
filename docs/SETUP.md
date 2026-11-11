@@ -81,9 +81,9 @@ Empty or incomplete message windows, an unanswered latest input, or known newer 
 
 Choose **Assess cards on open…** in the same Settings section. Read the disclosure, choose **Turn on**, then select your key file. This takes effect immediately after that flow; it does not need **Save settings**. Enabling it and relaunching the app send nothing by themselves.
 
-On subsequent openings, Spleen assesses only eligible changed Codex cards in the compass, one request at a time. Each request is at most 6,000 encoded bytes and uses at most six recent messages. Unchanged cards reuse cached results. Automatic screening skips recognizable secret-like text, but cannot guarantee removal of sensitive information. Pending work from an opening can finish after the panel closes.
+On subsequent openings, Spleen assesses only eligible changed Codex cards in the compass, one request at a time. Each request is at most 20,000 encoded bytes and uses at most six recent messages. A message longer than 2,400 characters is sent as its beginning and its ending, with the middle left out and marked. Unchanged cards reuse cached results. Automatic screening skips recognizable secret-like text, but cannot guarantee removal of sensitive information. Pending work from an opening can finish after the panel closes.
 
-Automatic assessment is capped at 100 requests per local calendar day, including failed attempts. The count survives relaunch, pausing and re-enabling. Manual reviews authorize separate single requests. These are request allowances, not guaranteed dollar limits.
+Automatic assessment is capped at 100 requests per local calendar day, including failed attempts. An excerpt whose request failed can be tried again on a later opening, at most three attempts a day. The count survives relaunch, pausing and re-enabling. Manual reviews authorize separate single requests. These are request allowances, not guaranteed dollar limits.
 
 Choose **Pause assessment on open** to stop future automatic requests. The paused choice is saved immediately. A request already sent may still complete or be billed. Deleting a local key file does not revoke the key at OpenAI; revoke it in your Platform account if it is no longer needed or has been exposed.
 
@@ -100,7 +100,7 @@ For the exact payload, caching and consent contract, see [assessment implementat
 | Settings says to select a conversation with recent messages | Select a Codex conversation first. Discovery/enrichment must have retrieved eligible recent messages. An unanswered or incomplete window can be skipped without an API call. |
 | Key-file setup fails | Use a plain-text regular file containing just the key or one `OPENAI_API_KEY=` assignment. Run `chmod 600` on that file. Choose the actual file rather than a symlink. |
 | Assessment pauses after HTTP 401/403 | Check the key, project access and account restrictions in OpenAI Platform, update the file if necessary, then enable assessment again. |
-| HTTP 429, a server error, or a network failure | Check API credits, limits and connectivity. Automatic attempts back off for at least a minute and need a later opening; each reserved attempt still counts, and today's duplicate protection can skip the same excerpt. Use the reviewed single-request flow for a deliberate retry after resolving the problem. A manual request is not retried automatically. |
+| HTTP 429, a server error, or a network failure | Check API credits, limits and connectivity. Automatic attempts back off for at least a minute and need a later opening. The same excerpt is tried at most three times a day, and each attempt counts toward the daily cap. Use the reviewed single-request flow for a deliberate retry after resolving the problem. A manual request is not retried automatically. |
 | Daily allowance is used | Automatic assessment becomes eligible again on the next local calendar day. Pausing or relaunching does not reset the count. |
 | Saved settings or conversations appear missing | Confirm how you launched Spleen. The run script and a directly opened app use different data directories. Quit before switching between them. |
 

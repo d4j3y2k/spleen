@@ -21,11 +21,12 @@ public enum AutomaticAttention {
     /// windows remain local and can be reviewed rather than silently redacted.
     /// Recognizable credentials are checked even inside example/code blocks.
     public static func containsLikelySecret(_ window: SessionWindow) -> Bool {
-        window.messages.contains { message in
-            patterns.contains { pattern in
-                pattern.firstMatch(in: message.text, range: NSRange(message.text.startIndex..., in: message.text)) != nil
-            } || containsPlausiblePaymentCard(message.text)
-        }
+        window.messages.contains { containsLikelySecret(in: $0.text) }
+    }
+    public static func containsLikelySecret(in text: String) -> Bool {
+        patterns.contains { pattern in
+            pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        } || containsPlausiblePaymentCard(text)
     }
 
     /// Deliberately broad: a full SSN-shaped number stays local even when it is

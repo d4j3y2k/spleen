@@ -257,7 +257,7 @@ final class AppModel: ObservableObject {
         insights = (try? InsightCache.load(from: insightURL)) ?? InsightCache()
         insights.retain(catalog: catalog)
         if !catalogLoadFailed { adoptCatalogTitles() }
-        pendingTimingBackfill = insights.entries.contains { $0.timing == nil || $0.window == nil }
+        pendingTimingBackfill = insights.entries.contains { $0.timing == nil || $0.window == nil || $0.window?.needsRefetch == true }
         if let data = try? Data(contentsOf: assessmentURL), data.count <= 500_000,
            let cache = try? JSONDecoder().decode([String: AssessedSession].self, from: data), cache.count <= 2000 {
             assessmentCache = cache
@@ -615,7 +615,8 @@ final class AppModel: ObservableObject {
     private func enrichCatalog() {
         guard !enriching else { return }
         // Backfill older excerpts once; a checked result can legitimately have no timestamps.
-        let cached = Set(insights.entries.filter { $0.timing != nil && $0.window != nil }.map(\.id))
+        // Windows cached with only the beginning of a long message are read again to keep its ending.
+        let cached = Set(insights.entries.filter { $0.timing != nil && $0.window != nil && $0.window?.needsRefetch != true }.map(\.id))
         let recent = state.rememberRecents ? state.destinations.max { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) }?.threadID : nil
         let suggested = Set((visibleOrder ?? preparedOrder).prefix(5).filter { $0.provider == .codex }.map(\.threadID))
         let candidates = catalog.entries.filter { catalog.includes($0) && !cached.contains($0.id) && !catalog.hiddenIDs.contains($0.id) }
@@ -794,7 +795,7 @@ final class AppModel: ObservableObject {
     func requestAutomaticAssessment() {
         let alert = NSAlert()
         alert.messageText = "Assess Codex cards each time you open Spleen?"
-        alert.informativeText = "Each time you press the Spleen shortcut, Spleen sends OpenAI the latest messages from any Codex card on screen whose text changed since it was last assessed: up to 6 recent user/assistant messages, 6,000 bytes per request. Text may include private topics and paths. No screenshots, tool output or full history, and nothing from Claude. Cards you don't see are never sent. Known secret-like text is skipped, but this is not a guarantee of anonymization. At most \(AutomaticAttentionConsent.defaultDailyLimit) requests a day, about a cent at most at the documented rate; the cap is not a billing guarantee. Opening never waits for an answer. Stays on until you pause it; no actions or approvals are automated."
+        alert.informativeText = "Each time you press the Spleen shortcut, Spleen sends OpenAI the latest messages from any Codex card on screen whose text changed since it was last assessed: up to 6 recent user/assistant messages, 20,000 bytes per request. A long message is sent as its beginning and ending, with the middle left out. Text may include private topics and paths. No screenshots, tool output or full history, and nothing from Claude. Cards you don't see are never sent. Known secret-like text is skipped, but this is not a guarantee of anonymization. At most \(AutomaticAttentionConsent.defaultDailyLimit) requests a day, a few cents at most at the documented rate; the cap is not a billing guarantee. Opening never waits for an answer. Stays on until you pause it; no actions or approvals are automated."
         alert.addButton(withTitle: "Turn on"); alert.addButton(withTitle: "Cancel")
         guard withModalPresentation({ alert.runModal() }) == .alertFirstButtonReturn else { return }
         let picker = NSOpenPanel(); picker.title = "Choose approved Spleen .env.local"
@@ -874,7 +875,8 @@ final class AppModel: ObservableObject {
             let key = try attentionCredential(at: url)
             let configuration = try DecisionsTrialConfiguration(id: "review-" + UUID().uuidString, maximumRequests: 1,
                 expiresAt: now().addingTimeInterval(60))
-            let ledger = DecisionsTrialLedger(url: repository.url.deletingLastPathComponent().appendingPathComponent("decision-reviews/\(configuration.id).json"), configuration: configuration)
+            let ledger = DecisionsTrialLedger(url: repository.url.deletingLastPathComponent().appendingPathComponent("decision-reviews/\(configuration.id).json"), configuration: configuration,
+                                              requestByteLimit: SessionAssessmentInput.maximumRequestBytes)
             let transport = ReviewedAttentionTransport(manifest: AttentionTrialManifest(configuration: configuration, bodies: [body]),
                 underlying: DecisionsHTTPTransport(approvedCredential: key, ledger: ledger, requestTimeout: 5))
             sendReviewedAssessment(window: window, body: body, transport: transport)
@@ -982,7 +984,7 @@ final class AppModel: ObservableObject {
                                             self.assessmentAttempts.remove(window.contentVersion)
                                             self.dailyLimitDay = DailyDecisionsTransport.day(for: self.now())
                                             status = "Today's \(consent.dailyLimit) requests are used · resumes tomorrow. Saved labels remain."
-                                        case .duplicateRequest: self.openAssessmentsSent -= 1 // Already sent today; not resent.
+                                        case .duplicateRequest: self.openAssessmentsSent -= 1 // Every attempt for this text is used today; not resent.
                                         case .configurationMismatch, .corruptLedger, .invalidConfiguration:
                                             self.pauseAutomaticAssessment(status: "Request log unavailable; paused with no further calls.")
                                         default: break

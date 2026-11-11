@@ -10,6 +10,33 @@ final class DecisionsTrialTests: XCTestCase {
         let configuration = try DecisionsTrialConfiguration(id: "fixture", maximumRequests: limit, expiresAt: date.addingTimeInterval(3600))
         try body(DecisionsTrialLedger(url: directory.appendingPathComponent("trial.json"), configuration: configuration), directory)
     }
+    func testARepeatedBodyIsAllowedOnlyUpToItsAttemptsAndEveryAttemptCounts() throws {
+        try withLedger(limit: 4) { strict, _ in
+            let retrying = DecisionsTrialLedger(url: strict.url, configuration: strict.configuration, attemptsPerRequest: 2)
+            let body = Data("failed once".utf8)
+            try retrying.reserve(body: body, now: date)
+            try retrying.reserve(body: body, now: date)
+            XCTAssertThrowsError(try retrying.reserve(body: body, now: date)) { XCTAssertEqual($0 as? DecisionsTrialError, .duplicateRequest) }
+            XCTAssertEqual(try retrying.status(now: date).reservedRequests, 2)
+            try retrying.reserve(body: Data("another".utf8), now: date)
+            try retrying.reserve(body: Data("another".utf8), now: date)
+            // The allowance is spent by attempts, not by distinct bodies.
+            XCTAssertThrowsError(try retrying.reserve(body: Data("fifth".utf8), now: date)) { XCTAssertEqual($0 as? DecisionsTrialError, .limitReached) }
+            // A ledger that allows no repeats does not accept a file holding them.
+            XCTAssertThrowsError(try strict.status(now: date)) { XCTAssertEqual($0 as? DecisionsTrialError, .corruptLedger) }
+        }
+    }
+    func testRequestByteLimitIsPerLedger() throws {
+        try withLedger { ranking, _ in
+            let body = Data(repeating: 0x61, count: DecisionsTrialLedger.maximumRequestBytes + 1)
+            XCTAssertThrowsError(try ranking.reserve(body: body, now: date)) { XCTAssertEqual($0 as? DecisionsTrialError, .oversizedRequest) }
+            let assessment = DecisionsTrialLedger(url: ranking.url, configuration: ranking.configuration,
+                                                  requestByteLimit: SessionAssessmentInput.maximumRequestBytes)
+            try assessment.reserve(body: body, now: date)
+            let tooLarge = Data(repeating: 0x61, count: SessionAssessmentInput.maximumRequestBytes + 1)
+            XCTAssertThrowsError(try assessment.reserve(body: tooLarge, now: date)) { XCTAssertEqual($0 as? DecisionsTrialError, .oversizedRequest) }
+        }
+    }
     func testRequestAllowanceAndDuplicateProtectionSurviveRestart() throws {
         try withLedger { ledger, _ in
             let first = Data("first request".utf8), second = Data("second request".utf8)
@@ -245,6 +272,37 @@ final class DailyDecisionsTransportTests: XCTestCase {
         XCTAssertEqual(DecisionsStubProtocol.requests, 2)
         clock.set(Date(timeIntervalSince1970: 2_000_000_000 + 86_400))
         XCTAssertNoThrow(try send(first, "c").get())
+        XCTAssertEqual(DecisionsStubProtocol.requests, 3)
+    }
+    func testARequestThatFailedCanBeSentAgainAndCountsAgain() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-daily-retry-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DecisionsStubProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        DecisionsStubProtocol.reset()
+        defer { DecisionsStubProtocol.reset() }
+        let clock = DecisionsClockFixture(date: Date(timeIntervalSince1970: 2_000_000_000), firstRead: {})
+        let transport = try DailyDecisionsTransport(credential: "synthetic-test-only", directory: directory, consentID: "fixture",
+            dailyLimit: 3, calendar: calendar, session: session, now: clock.read, attemptsPerRequest: 2)
+        func send(_ text: String) -> Result<Data, Error> {
+            let done = expectation(description: text)
+            var outcome: Result<Data, Error> = .failure(URLError(.unknown))
+            transport.send(body: Data(text.utf8)) { outcome = $0; done.fulfill() }
+            wait(for: [done], timeout: 2)
+            return outcome
+        }
+        DecisionsStubProtocol.status = 503
+        XCTAssertThrowsError(try send("card").get()) { XCTAssertEqual($0 as? DecisionsHTTPStatusError, DecisionsHTTPStatusError(statusCode: 503)) }
+        DecisionsStubProtocol.status = 200
+        // The retry reaches the network instead of being refused as a duplicate.
+        XCTAssertNoThrow(try send("card").get())
+        XCTAssertEqual(DecisionsStubProtocol.requests, 2)
+        XCTAssertThrowsError(try send("card").get()) { XCTAssertEqual($0 as? DecisionsTrialError, .duplicateRequest) }
+        // Both attempts were counted: one request is left of three.
+        XCTAssertNoThrow(try send("other").get())
+        XCTAssertThrowsError(try send("last").get()) { XCTAssertEqual($0 as? DecisionsTrialError, .limitReached) }
         XCTAssertEqual(DecisionsStubProtocol.requests, 3)
     }
     func testDayKeysFollowTheCalendarAndInvalidSetupsAreRejected() {

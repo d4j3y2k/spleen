@@ -77,6 +77,20 @@ func runAttentionTests() -> (passed: Int, failures: [String]) {
         check(try attentionCredential(at: keyFixture) == "sk-test-raw-not-a-real-key", "explicit raw credential file remains supported")
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: keyFixture.path)
         check((try? attentionCredential(at: keyFixture)) == nil, "world-readable credential file rejected")
+        // A consent given when requests were smaller does not authorize the longer ones.
+        let consentDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-consent-\(UUID().uuidString)")
+        var earlier = AutomaticAttentionConsent(enabled: true, id: "native-earlier", dailyLimit: 2, credentialPath: keyFixture.path, scope: "visible-codex-on-open-v1")
+        try earlier.save(in: consentDirectory)
+        var superseded = false
+        do { _ = try AutomaticAttentionConsent.load(from: consentDirectory) }
+        catch is AutomaticAttentionConsent.SupersededScope { superseded = true } catch { }
+        check(superseded, "an enabled consent for the earlier request size must be given again")
+        earlier.enabled = false
+        try earlier.save(in: consentDirectory)
+        var pausedIsOff = false
+        do { pausedIsOff = try AutomaticAttentionConsent.load(from: consentDirectory) == nil } catch { }
+        check(pausedIsOff, "a paused earlier consent stays off without a renewal notice")
+        try? FileManager.default.removeItem(at: consentDirectory)
         // Assessment on open reuses a manual cached result and can be paused without another request.
         let automaticMock = AttentionTestTransport()
         let automatic = AutomaticAttentionConsent(enabled: true, id: "native-open", dailyLimit: 2, credentialPath: keyFixture.path, scope: AutomaticAttentionConsent.scopeName)

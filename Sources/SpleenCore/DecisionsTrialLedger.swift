@@ -43,11 +43,19 @@ public final class DecisionsTrialLedger {
     private static let maximumFileBytes = 32768
     public let url: URL
     public let configuration: DecisionsTrialConfiguration
+    /// The largest body this ledger reserves. Ranking keeps the default; assessment passes its own.
+    public let requestByteLimit: Int
+    /// How many times one body may be reserved. One rejects every repeat. More lets a caller
+    /// retry a request that failed, and each attempt still counts toward `maximumRequests`.
+    public let attemptsPerRequest: Int
     private struct Reservation: Codable { let fingerprint: String; let reservedAt: Date }
     private struct State: Codable { let version: Int; let configuration: DecisionsTrialConfiguration; var reservations: [Reservation] }
 
-    public init(url: URL, configuration: DecisionsTrialConfiguration) {
+    public init(url: URL, configuration: DecisionsTrialConfiguration,
+                requestByteLimit: Int = DecisionsTrialLedger.maximumRequestBytes, attemptsPerRequest: Int = 1) {
         self.url = url; self.configuration = configuration
+        self.requestByteLimit = min(32_000, max(1, requestByteLimit))
+        self.attemptsPerRequest = min(5, max(1, attemptsPerRequest))
     }
     public func status(now: Date = Date()) throws -> DecisionsTrialStatus {
         try locked {
@@ -58,14 +66,14 @@ public final class DecisionsTrialLedger {
         }
     }
     public func reserve(body: Data, now: Date = Date()) throws {
-        guard !body.isEmpty, body.count <= Self.maximumRequestBytes else { throw DecisionsTrialError.oversizedRequest }
+        guard !body.isEmpty, body.count <= requestByteLimit else { throw DecisionsTrialError.oversizedRequest }
         guard now.timeIntervalSince1970.isFinite else { throw DecisionsTrialError.invalidConfiguration }
         let fingerprint = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
         try locked {
             var state = try read()
             guard now < configuration.expiresAt else { throw DecisionsTrialError.expired }
             guard !state.reservations.contains(where: { $0.reservedAt > now }) else { throw DecisionsTrialError.clockMovedBackwards }
-            guard !state.reservations.contains(where: { $0.fingerprint == fingerprint }) else { throw DecisionsTrialError.duplicateRequest }
+            guard state.reservations.filter({ $0.fingerprint == fingerprint }).count < attemptsPerRequest else { throw DecisionsTrialError.duplicateRequest }
             guard state.reservations.count < configuration.maximumRequests else { throw DecisionsTrialError.limitReached }
             state.reservations.append(Reservation(fingerprint: fingerprint, reservedAt: now))
             try write(state)
@@ -91,7 +99,7 @@ public final class DecisionsTrialLedger {
         }
         guard let state = try? JSONDecoder().decode(State.self, from: data), state.version == 1,
               (1...100).contains(state.configuration.maximumRequests), state.reservations.count <= state.configuration.maximumRequests,
-              Set(state.reservations.map(\.fingerprint)).count == state.reservations.count,
+              Dictionary(grouping: state.reservations, by: \.fingerprint).values.allSatisfy({ $0.count <= attemptsPerRequest }),
               state.reservations.allSatisfy({ $0.fingerprint.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil && $0.reservedAt.timeIntervalSince1970.isFinite }) else {
             throw DecisionsTrialError.corruptLedger
         }
