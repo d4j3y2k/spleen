@@ -304,7 +304,7 @@ final class ClaudeDesktopObserver {
             }
             // A web area is the leaf of our scan, even on an unknown route. Never
             // descend through conversation DOM looking for another matching URL.
-            guard role != "AXWebArea", depth < 8, nodes.count < 80,
+            guard role != "AXWebArea", depth < ClaudeDesktopObservation.webAreaSearchDepth, nodes.count < 80,
                   prepareRead(node, ticket: ticket, deadline: deadline) else { continue }
             var children: CFArray?
             // Copy only the bounded prefix. Never fetch message value/text or scroll.

@@ -82,7 +82,7 @@ private final class ClaudeStatusAXReader {
               CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return nil }
         let window = rawWindow as! AXUIElement
         stage = "web-area"
-        let webAreas = find(in: window, depth: 8, stopAtWebArea: true) { role, _ in role == "AXWebArea" }
+        let webAreas = find(in: window, depth: ClaudeDesktopObservation.webAreaSearchDepth, stopAtWebArea: true) { role, _ in role == "AXWebArea" }
         let supported = webAreas.compactMap { node -> (AXUIElement, ClaudeDesktopObservation)? in
             observation(node).map { (node, $0) }
         }

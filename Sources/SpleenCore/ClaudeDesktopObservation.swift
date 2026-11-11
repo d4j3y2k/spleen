@@ -5,6 +5,10 @@ public enum ClaudeDesktopSurface: Equatable { case chat, code }
 /// Identity observed in Claude's focused accessibility web area. Not a navigation target.
 public struct ClaudeDesktopObservation: Equatable {
     public static let maximumTitleCharacters = 180
+    /// How many levels below the focused window a scan may look for the conversation's
+    /// web area. Claude Desktop 5.1231 puts it at level 9, beside the app's own renderer
+    /// page; earlier builds had it at 8. The node budgets still bound each scan.
+    public static let webAreaSearchDepth = 12
     public static let maximumTitleBytes = 720
     public let id: String
     public let title: String

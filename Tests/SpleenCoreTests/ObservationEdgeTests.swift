@@ -14,6 +14,16 @@ final class ObservationEdgeTests: XCTestCase {
         }
     }
 
+    func testClaudeRendererPageIsNeitherAConversationNorALeftPage() {
+        // Claude Desktop 5.1231 shows its own renderer page beside the conversation's web area.
+        // It must not count as a conversation, nor as leaving one.
+        let renderer = "file:///Applications/Claude.app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html"
+        XCTAssertNil(ClaudeDesktopObservation(url: renderer, title: ""))
+        XCTAssertFalse(ClaudeDesktopObservation.isOtherClaudePage(url: renderer))
+        // In that build the conversation's web area sits nine levels below the focused window.
+        XCTAssertGreaterThanOrEqual(ClaudeDesktopObservation.webAreaSearchDepth, 9)
+    }
+
     func testBareAppNameIsNotATitle() throws {
         XCTAssertEqual(try XCTUnwrap(ClaudeDesktopObservation(url: "https://claude.ai/chat/\(a)", title: "Claude")).title, "")
         XCTAssertEqual(try XCTUnwrap(ClaudeDesktopObservation(url: "https://claude.ai/epitaxy/local_\(a)", title: "Claude Code")).title, "")
