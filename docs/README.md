@@ -30,3 +30,6 @@ The README's light and dark images in `assets/` come from the app's native previ
 ```
 
 Inspect `native-fixture-compass-light@2x.png` and `native-fixture-compass-dark@2x.png`, then copy them to `docs/assets/compass-light.png` and `docs/assets/compass-dark.png`. Other rendered scenarios remain local verification artifacts.
+
+- [Moonshine connection](INTEGRATION.md): optional query transfer between independent apps.
+- [November 13 public-source review](PUBLIC_READINESS_2026-11-13.md): installation, integration, and privacy checks.

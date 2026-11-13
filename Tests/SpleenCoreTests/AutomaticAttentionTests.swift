@@ -43,7 +43,8 @@ final class AutomaticAttentionTests: XCTestCase {
                        AutomaticAttention.nextWindow(windows: [b,a], cachedVersions: [], attemptedVersions: []))
     }
     func testRecognizableSecretsStayLocal() {
-        let secrets = ["sk-proj-" + String(repeating: "a", count: 30), "-----BEGIN PRIVATE KEY-----",
+        // Synthetic markers only; no private-key material or usable credentials.
+        let secrets = ["sk-proj-" + String(repeating: "a", count: 30), "-----BEGIN " + "PRIVATE KEY-----",
                        "password=hunter22", "\"client_secret\": \"made-up-secret-value\"",
                        "OPENAI_API_KEY='example-key-value'", "Authorization: Bearer abcdefghijklmnop",
                        "ghp_" + String(repeating: "a", count: 30), "AKIA" + String(repeating: "A", count: 16),
@@ -54,7 +55,7 @@ final class AutomaticAttentionTests: XCTestCase {
                        "SLACK_BOT_TOKEN=xoxb-made-up", "DATABASE_PASS: made-up-pass",
                        "sk_live_" + String(repeating: "a", count: 24), "rk_test_" + String(repeating: "b", count: 24),
                        "npm_" + String(repeating: "c", count: 36), "postgres://admin:made-up-pass@db.internal:5432/app",
-                       "-----BEGIN PGP PRIVATE KEY BLOCK-----", "-----BEGIN OPENSSH PRIVATE KEY-----"]
+                       "-----BEGIN " + "PGP PRIVATE KEY BLOCK-----", "-----BEGIN " + "OPENSSH PRIVATE KEY-----"]
         for secret in secrets {
             let w = window(text: "Example text: \(secret)")
             XCTAssertTrue(AutomaticAttention.containsLikelySecret(w), secret)

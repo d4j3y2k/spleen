@@ -126,6 +126,9 @@ struct SwitcherView: View {
                 KeyboardHint(key: "↑ ↓", label: "select")
                 KeyboardHint(key: "↵", label: "open")
                 KeyboardHint(key: "esc", label: "close")
+                Button { model.switchSearch?() } label: {
+                    KeyboardHint(key: "tab", label: "Moonshine")
+                }.buttonStyle(.plain).help("Continue this search in Moonshine")
                 Spacer()
                 HStack(spacing: 2) {
                     QuietIconButton(symbol: "plus", label: "Add conversation") { model.edit() }

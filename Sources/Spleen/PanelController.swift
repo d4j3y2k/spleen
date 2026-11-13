@@ -19,6 +19,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     private weak var searchField: NSTextField?
     private var compassKeyboardFocus: CompassKeyboardFocus?
     private var restorationTraceGeneration = 0
+    private var handoffPending = false
+    private var handoffGeneration = 0
+    private var pendingSearchCaret = false
+    var dispatchSearch: (SearchHandoff, @escaping (Bool) -> Void) -> Void = { SearchHandoffLauncher.open($0, to: .moonshine, completion: $1) }
     var dispatchURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     var currentPID: () -> Int32? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var restorePID: (Int32) -> Void = { pid in NSRunningApplication(processIdentifier: pid)?.activate(options: []) }
@@ -45,6 +49,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                   field.window === self.panel else { return }
             self.searchField = field
             self.panel.makeFirstResponder(field)
+            self.placeSearchCaret()
             let pending = self.pendingSearchEvents
             self.pendingSearchEvents = []
             for event in pending {
@@ -56,6 +61,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         }))
         hostingView.sizingOptions = []
         panel.contentView = hostingView
+        model.switchSearch = { [weak self] in self?.switchSearch() }
         model.openDestination = { [weak self] in self?.open($0) }
         model.openDot = { [weak self] in self?.openDot() }
         model.cancel = { [weak self] in self?.dismiss(.cancel) }
@@ -98,6 +104,16 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "d" {
             if !event.isARepeat { openDot() }
+            return nil
+        }
+        if model.mode == .search, !pendingSearchEvents.isEmpty {
+            traceNavigation(diagnosticKey, "buffer.searchMount")
+            pendingSearchEvents.append(event)
+            return nil
+        }
+        if event.keyCode == 48, modifiers.isEmpty || modifiers == .shift,
+           model.mode == .compass || model.mode == .search {
+            if !event.isARepeat { switchSearch() }
             return nil
         }
         if model.mode == .compass {
@@ -143,11 +159,6 @@ final class PanelController: NSObject, NSWindowDelegate {
             }
             pendingSearchEvents = [event]
             model.beginSearch()
-            return nil
-        }
-        if model.mode == .search, !pendingSearchEvents.isEmpty {
-            traceNavigation(diagnosticKey, "buffer.searchMount")
-            pendingSearchEvents.append(event)
             return nil
         }
         // The search editor owns list navigation. A focused result, Edit button,
@@ -210,13 +221,57 @@ final class PanelController: NSObject, NSWindowDelegate {
         NSPoint(x: min(max(origin.x, frame.minX), max(frame.minX, frame.maxX - size.width)),
                 y: min(max(origin.y, frame.minY), frame.maxY - size.height))
     }
+    func receiveSearch(_ request: SearchHandoff, orderFront: Bool = true) {
+        handoffGeneration += 1; handoffPending = false
+        pendingSearchEvents = []
+        present(orderFront: orderFront, assessOnOpen: false, searchQuery: request.query)
+        if let pid = request.returnPID,
+           let app = NSRunningApplication(processIdentifier: pid),
+           ![SearchHandoff.App.spleen.bundleID, SearchHandoff.App.moonshine.bundleID].contains(app.bundleIdentifier ?? "") {
+            session.present(priorPID: pid)
+        }
+        model.beginHandoffSearch(request.query)
+        pendingSearchCaret = true
+        placeSearchCaret()
+    }
+    private func placeSearchCaret() {
+        guard pendingSearchCaret, let searchField, searchField.window === panel else { return }
+        searchField.stringValue = model.query
+        panel.makeFirstResponder(searchField)
+        if let editor = searchField.currentEditor() {
+            editor.selectedRange = NSRange(location: (model.query as NSString).length, length: 0)
+            pendingSearchCaret = false
+        }
+    }
+    func switchSearch() {
+        guard session.isPresented, !handoffPending, model.mode == .compass || model.mode == .search else { return }
+        let priorPID = session.priorPID
+        let wasKey = panel.isKeyWindow
+        let request = SearchHandoff(query: model.query, returnPID: priorPID)
+        handoffGeneration += 1
+        let generation = handoffGeneration
+        handoffPending = true
+        dismiss(.dispatch, endingPresentation: false)
+        dispatchSearch(request) { [weak self] accepted in
+            guard let self, self.handoffGeneration == generation else { return }
+            self.handoffPending = false
+            if accepted { self.model.endPresentation() }
+            else {
+                self.model.reportTransientError("Couldn’t open Moonshine. Open or install Moonshine, then try Tab again.")
+                self.present(reset: false, orderFront: wasKey, assessOnOpen: false)
+                self.session.present(priorPID: priorPID)
+                self.pendingSearchCaret = self.model.mode == .search
+                self.placeSearchCaret()
+            }
+        }
+    }
     func toggle() { session.isPresented ? dismiss(.cancel) : present() }
     /// Menu-bar entry points that open something other than the compass. Its cards are
     /// never on screen there, so these never assess them.
-    func presentSearch() { present(assessOnOpen: false); model.beginSearch() }
+    func presentSearch() { present(assessOnOpen: false, searchQuery: ""); model.beginSearch() }
     func presentEditor() { present(assessOnOpen: false); model.edit() }
     func presentSettings() { present(assessOnOpen: false); model.showSettings() }
-    func present(reset: Bool = true, orderFront: Bool = true, assessOnOpen: Bool = true) {
+    func present(reset: Bool = true, orderFront: Bool = true, assessOnOpen: Bool = true, searchQuery: String? = nil) {
         guard !session.isPresented else {
             if orderFront && !panel.isKeyWindow {
                 panel.makeKeyAndOrderFront(nil)
@@ -225,7 +280,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             return
         }
         restorationTraceGeneration &+= 1
-        if reset { model.prepare(assessOnOpen: assessOnOpen) }
+        if reset { model.prepare(assessOnOpen: assessOnOpen, searchQuery: searchQuery) }
         resize(for: model.mode)
         session.present(priorPID: currentPID())
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
@@ -250,7 +305,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.makeFirstResponder(nil)
         compassKeyboardFocus = nil
         panel.orderOut(nil)
-        if endingPresentation { model.endPresentation() }
+        if endingPresentation {
+            handoffGeneration += 1; handoffPending = false; pendingSearchCaret = false
+            model.endPresentation()
+        }
         if let restore {
             trace("focus.restore.requested")
             restorePID(restore)

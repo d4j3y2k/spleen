@@ -6,14 +6,16 @@ Switching, search and local indicators work without an OpenAI API key. The Decis
 
 ## Build and start
 
-Clone the repository using GitHub's **Code** menu. In Terminal, go to the cloned `spleen` folder and run:
-
 ```sh
-./scripts/build.sh
-./scripts/run.sh
+git clone https://github.com/d4j3y2k/spleen.git
+cd spleen
+./scripts/install.sh
+open "$HOME/Applications/Spleen.app"
 ```
 
-The build creates `build/Spleen.app`. The run script uses `.local-state/` in the checkout for saved destinations and settings. Opening the `.app` directly, including a copy placed in Applications, uses `~/Library/Application Support/Spleen/` instead. Quit Spleen before changing launch methods so you know which data directory is in use.
+The installer builds and installs into `~/Applications` without sudo. Quit any running Spleen first. Set `SPLEEN_INSTALL_DIR` to choose a different folder you own. To update, quit Spleen, run `git pull --ff-only` and `./scripts/install.sh` in your clone, then open the installed app again. Preferences and conversation state are kept separately.
+
+For development, `./scripts/build.sh` creates `build/Spleen.app`, and `./scripts/run.sh` launches it with `.local-state/` inside the checkout. Opening the app directly, including an installed copy, reuses the last normal data directory. Before one has been chosen, it uses `~/Library/Application Support/Spleen/`. An explicit `--data-dir` overrides it. Quit before changing stores. Do not delete a development checkout while you still use its `.local-state/` store; preserve that directory first.
 
 The build selects an available Developer ID or Apple Development signing identity, or uses ad-hoc signing if none is available. Accessibility permission may need to be granted again after an ad-hoc rebuild. See [build and signing details](../README.md#build-and-run).
 
@@ -105,3 +107,11 @@ For the exact payload, caching and consent contract, see [assessment implementat
 | Saved settings or conversations appear missing | Confirm how you launched Spleen. The run script and a directly opened app use different data directories. Quit before switching between them. |
 
 OpenAI's [API error guide](https://developers.openai.com/api/docs/guides/error-codes#api-errors) explains account, credit and access failures. Spleen remains usable for local switching when assessment is off or unavailable.
+
+## Optional Moonshine connection
+
+Install [Moonshine](https://github.com/d4j3y2k/moonshine#install) and open both apps once. Tab or Shift–Tab transfers the exact search between them. Moonshine searches open windows and browser tabs; Spleen searches conversations. Both work independently. See the [connection guide](INTEGRATION.md).
+
+## Remove
+
+Quit Spleen and move `~/Applications/Spleen.app` to the Trash. Saved state and any separate API key file remain unless you remove them. If you enabled optional Codex hooks, use the [activity-report guide](../integrations/codex/README.md) to remove that integration separately. Revoke any macOS permissions you no longer need.

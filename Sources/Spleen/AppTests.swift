@@ -23,6 +23,9 @@ func runAppTests() -> Bool {
           "catalog helper follows a renamed or relocated Desktop installation")
     check(installedCodexCatalogClient(applicationURL: nil).executable == CodexCatalogClient().executable,
           "missing Desktop registration keeps the conventional install fallback")
+    check(spleenDataDirectory(["Spleen", "--search-handoff-launch"], rememberedDirectory: "/fixture/previous").path == "/fixture/previous", "cold handoff preserves the last data directory")
+    check(spleenDataDirectory(["Spleen", "--search-handoff-launch", "--data-dir", "/fixture/explicit"], rememberedDirectory: "/fixture/previous").path == "/fixture/explicit", "explicit data directory wins over handoff memory")
+    check(spleenDataDirectory(["Spleen"], rememberedDirectory: "/fixture/previous").path == "/fixture/previous", "ordinary app launch also preserves the last data directory")
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-app-test-\(UUID())")
     defer { try? FileManager.default.removeItem(at: temporary) }
     let model = AppModel(repository: StateRepository(url: temporary.appendingPathComponent("state.json")),
@@ -252,6 +255,9 @@ func runAppTests() -> Bool {
     let desktop = runDesktopTests()
     count += desktop.passed + desktop.failures.count
     failures += desktop.failures
+    let handoff = runSearchHandoffChecks()
+    count += handoff.passed + handoff.failures.count
+    failures += handoff.failures
     let keyboard = runKeyboardReadinessTests()
     count += keyboard.passed + keyboard.failures.count
     failures += keyboard.failures

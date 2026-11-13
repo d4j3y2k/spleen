@@ -1,3 +1,9 @@
+# 0.2.28 — Moonshine connection and source installation
+
+Tab and Shift–Tab continue the exact query in the optional Moonshine companion, which searches open windows and browser tabs. Incoming searches open directly with the caret at the end, preserve the original Escape target, and do not trigger assessment-on-open. Closed companions start automatically; failed handoffs preserve the sender’s query. Both apps work independently.
+
+Added a per-user source installer and a shared connection guide. Direct launches remember the last normal data directory so a handoff resumes the same store.
+
 # Development log
 
 This is the original working README, kept as a release-by-release record of what was built and verified. Links into `evidence/` refer to a local, untracked folder of logs and probe output. For an introduction to the app, read the [top-level README](../README.md).

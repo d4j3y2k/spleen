@@ -10,9 +10,12 @@ func installedCodexCatalogClient(applicationURL: URL? =
     return CodexCatalogClient(executable: applicationURL.appendingPathComponent("Contents/Resources/codex-cli/bin/codex"))
 }
 
-func spleenDataDirectory(_ arguments: [String] = CommandLine.arguments) -> URL {
+func spleenDataDirectory(_ arguments: [String] = CommandLine.arguments, rememberedDirectory: String? = UserDefaults.standard.string(forKey: "searchHandoffDataDirectory")) -> URL {
     if let index = arguments.firstIndex(of: "--data-dir"), arguments.indices.contains(index + 1) {
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
+    }
+    if let rememberedDirectory, rememberedDirectory.hasPrefix("/") {
+        return URL(fileURLWithPath: rememberedDirectory, isDirectory: true)
     }
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Spleen", isDirectory: true)
 }
@@ -31,6 +34,7 @@ func diagnosticCatalogFolders(_ arguments: [String] = CommandLine.arguments) -> 
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var controller: PanelController!
+    private var pendingSearch: SearchHandoff?
     var hotkey: HotKey!
     var statusItem: NSStatusItem!
     private var openItem: NSMenuItem?
@@ -70,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let directory = spleenDataDirectory(arguments)
+        UserDefaults.standard.set(directory.path, forKey: "searchHandoffDataDirectory")
         // Earlier builds could create it 0755, so other local accounts could read excerpts.
         try? PrivateFile.restrict(directory)
         let mainMenu = NSMenu()
@@ -149,7 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in menu.items { item.target = self }
         statusItem.menu = menu
         // Restoring a standing opt-in never authorizes a request just by launching.
-        if !CommandLine.arguments.contains("--background-launch") { controller.present(assessOnOpen: false) }
+        if let request = pendingSearch {
+            pendingSearch = nil; controller.receiveSearch(request)
+        } else if !CommandLine.arguments.contains("--background-launch") { controller.present(assessOnOpen: false) }
+    }
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let request = urls.compactMap({ SearchHandoff(url: $0, app: .spleen) }).last else { return }
+        if let controller { controller.receiveSearch(request) } else { pendingSearch = request }
     }
     @objc func show() { controller.present() }
     @objc func openDot() { controller.openDot() }

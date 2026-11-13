@@ -67,6 +67,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var refreshing = false
     @Published private(set) var updateReady = false
     @Published private(set) var prepareMilliseconds = 0.0
+    private var handoffInitialIndexGeneration: Int?
     private var visibleSnapshot: RelevanceSnapshot?
     private var visibleOrder: [Destination]?
     private var readyOrder: [Destination] = []
@@ -198,6 +199,7 @@ final class AppModel: ObservableObject {
     private var catalogURL: URL { repository.url.deletingLastPathComponent().appendingPathComponent("catalog.json") }
     let repository: StateRepository
     private var loadFailed = false
+    var switchSearch: (() -> Void)?
     var openDestination: ((Destination) -> Void)?
     var changeShortcut: ((Shortcut) throws -> Void)?
     var cancel: (() -> Void)?
@@ -313,8 +315,9 @@ final class AppModel: ObservableObject {
             ? (visibleOrder ?? preparedOrder) : (visibleSnapshot ?? preparedSnapshot).results(query: query)
         if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
     }
-    func prepare(assessOnOpen: Bool = true) {
+    func prepare(assessOnOpen: Bool = true, searchQuery: String? = nil) {
         let start = ProcessInfo.processInfo.systemUptime
+        handoffInitialIndexGeneration = nil
         clearTransientError()
         let instant = now(), tick = uptime()
         let fresh = preparedContext.isFresh(now: instant, uptime: tick)
@@ -328,13 +331,16 @@ final class AppModel: ObservableObject {
         visibleOrder = order
         presentationGeneration += 1
         isPresented = true; updateReady = false
-        mode = .compass
-        preparingInvocation = true; query = ""
-        results = order; compassItems = Array(order.prefix(5)); selectedID = order.first?.id
+        // A transferred search mounts at its final mode/size on the first frame.
+        // Preparing a compass first needlessly laid out and resized two native views.
+        preparingInvocation = true
+        mode = searchQuery == nil ? .compass : .search; query = searchQuery ?? ""
+        results = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? order : snapshot.results(query: query)
+        compassItems = Array(order.prefix(5)); selectedID = results.first?.id
         recentSessions = readyRecents.visibleEntries(now: instant, uptime: tick)
         browsingRecents = false; recentReturnID = nil; pendingRecentEntry = false
         preparingInvocation = false
-        openingRefinementGeneration = immediate != nil && (indexing || order != ranked) ? presentationGeneration : nil
+        openingRefinementGeneration = searchQuery == nil && immediate != nil && (indexing || order != ranked) ? presentationGeneration : nil
         let invocation = presentationGeneration
         prepareMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
         DispatchQueue.main.async { [weak self] in
@@ -357,6 +363,12 @@ final class AppModel: ObservableObject {
     func beginSearch(_ text: String = "") {
         freezeOpening(); browsingRecents = false; pendingRecentEntry = false; mode = .search; query = text
         if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
+    }
+    func beginHandoffSearch(_ text: String) {
+        beginSearch(text)
+        // A cold launch has no prepared corpus yet. Adopt its first index without
+        // requiring a second user action; later refreshes still preserve visible choices.
+        handoffInitialIndexGeneration = visibleOrder?.isEmpty == true && preparedOrder.isEmpty ? presentationGeneration : nil
     }
     func freezeOpening() { openingRefinementGeneration = nil }
     @discardableResult private func refineOpeningIfReady() -> Bool {
@@ -589,7 +601,11 @@ final class AppModel: ObservableObject {
                 // Filling an untouched empty invocation cannot move an existing choice or typed search.
                 let emptyPresentation = self.isPresented && self.visibleOrder?.isEmpty == true && self.results.isEmpty &&
                     self.query.isEmpty && self.selectedID == nil && (self.mode == .search || self.mode == .compass)
-                let adopt = self.pendingVisibleAdoption == self.presentationGeneration || emptyPresentation
+                let firstHandoffIndex = self.handoffInitialIndexGeneration == self.presentationGeneration &&
+                    self.isPresented && self.mode == .search && self.visibleOrder?.isEmpty == true &&
+                    self.results.isEmpty && self.selectedID == nil
+                let adopt = self.pendingVisibleAdoption == self.presentationGeneration || emptyPresentation || firstHandoffIndex
+                if firstHandoffIndex && !self.preparedOrder.isEmpty { self.handoffInitialIndexGeneration = nil }
                 self.pendingVisibleAdoption = nil
                 if adopt { self.freezeOpening(); self.visibleInitialReturnKey = nil }
                 if !adopt && self.refineOpeningIfReady() { /* One untouched opening refinement. */ }

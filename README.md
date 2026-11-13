@@ -4,6 +4,8 @@ A small native macOS switcher for getting back to the AI conversation you were i
 
 Press **Control–Option–Space** and a compass appears over whatever you are doing: the conversation you most likely want to return to in the center, four more around it, and a column of recent sessions on the right. Arrow keys pick one, Return opens it in its own app, Escape puts everything back. Typing searches by title, topic or project.
 
+**Works on its own.** Optionally install [Moonshine](https://github.com/d4j3y2k/moonshine) to search open windows and browser tabs alongside your conversations. With both apps installed, **Tab / Shift–Tab** carries the exact query between them, ready to continue typing. Neither app requires the other; each keeps its own result view, permissions, settings, and global shortcut. See [using the apps together](docs/INTEGRATION.md).
+
 Spleen treats a **Codex** thread, a **Claude** chat and a **Claude Code** session inside Claude Desktop as the same kind of thing: a destination you can jump to. It keeps a short local memory to help you return to recent work, and it stays out of the way otherwise. There is no chat window, no composer and no model in the loop by default.
 
 <picture>
@@ -49,23 +51,28 @@ Claude discovery covers sessions you save or visit while observation is enabled,
 
 The optional Codex hook installer requires Python 3.11 or later. Switching and building the app do not require Python.
 
-## Build and run
+## Install
 
 The current setup is a build from source. For a first-run walkthrough, optional API key setup and troubleshooting, see the [setup guide](docs/SETUP.md).
 
-Clone this repository using GitHub's **Code** menu, then run from its parent directory:
-
 ```sh
+git clone https://github.com/d4j3y2k/spleen.git
 cd spleen
-./scripts/build.sh
-./scripts/run.sh
+./scripts/install.sh
+open "$HOME/Applications/Spleen.app"
 ```
+
+The installer builds locally, verifies the signature, and copies the app to `~/Applications` without administrator access. Quit Spleen before installing or updating. There is no notarized download yet. The installer does not change Gatekeeper, grant Accessibility permissions, or install Codex hooks.
+
+## Build and run
+
+To build without installing, use `./scripts/build.sh` and open `build/Spleen.app`. For a development store inside the checkout, use `./scripts/run.sh` instead.
 
 Spleen appears in the menu bar. Press **Control–Option–Space** to open it. For a first destination, use **Add conversation…** with a copied chat link, or let local Codex discovery populate the list. No API key is needed for switching, search, or local indicators.
 
 `build.sh` produces `build/Spleen.app` and signs it with the first Developer ID or Apple Development identity in your keychain, falling back to an ad-hoc signature. A stable identity matters: macOS ties the Accessibility grant to the code signature, and an ad-hoc signature changes on every build, which silently revokes the grant. Set `SPLEEN_SIGN_IDENTITY` to choose a certificate, or to `-` for ad-hoc on purpose.
 
-`run.sh` launches the app with its data in `.local-state/` inside the checkout, first quitting a copy of this build that is already running so a fresh build actually starts. Launching the `.app` directly uses `~/Library/Application Support/Spleen/`. Quit before switching between the two.
+`run.sh` launches the app with its data in `.local-state/` inside the checkout, first quitting a copy of this build that is already running so a fresh build actually starts. Launching the `.app` directly reuses the last data directory. Before a directory has been chosen, it uses `~/Library/Application Support/Spleen/`. An explicit `--data-dir` overrides the remembered directory; quit before switching stores.
 
 To check everything:
 
@@ -97,6 +104,10 @@ You can use your own OpenAI API key to assess recent **Codex** conversations. Th
 4. For recurring use, choose **Assess cards on open…**, read the consent dialog and select the same file. Each later opening of the compass assesses the eligible changed Codex cards on screen, up to 100 requests per day. Opening Settings, search or the editor from the menu bar sends nothing. **Pause assessment on open** stops future automatic requests.
 
 The file stays on your Mac; requests use your key directly with OpenAI. Assessment sends bounded message text that can contain private information. Read the privacy details below before enabling it. The [setup guide](docs/SETUP.md#troubleshooting) covers missing messages, key-file permissions and API errors.
+
+## Use with Moonshine
+
+Install [Moonshine](https://github.com/d4j3y2k/moonshine#install) separately and open each app once. Press **Tab / Shift–Tab** in either search to carry the query to the other. Spleen keeps **Control–Option–Space**; Moonshine uses **Control–Option–M**. No shared account, folder, key, or browser pairing code is needed. A missing companion leaves your search available. The receiving app applies its own privacy settings; a transferred search does not trigger Spleen’s assessment-on-open. See the [connection guide](docs/INTEGRATION.md).
 
 ## Privacy and local storage
 

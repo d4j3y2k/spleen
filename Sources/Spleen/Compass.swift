@@ -311,6 +311,9 @@ struct CompassView: View {
                 KeyboardHint(key: model.browsingRecents ? "↑ ↓" : "↑ ↓ ← →", label: model.browsingRecents ? "browse" : "choose")
                 KeyboardHint(key: "↵", label: "open")
                 KeyboardHint(key: "esc", label: "close")
+                Button { model.switchSearch?() } label: {
+                    KeyboardHint(key: "tab", label: "Moonshine")
+                }.buttonStyle(.plain).help("Continue this search in Moonshine")
             }
             Spacer(minLength: 8)
             Button { model.beginSearch() } label: {
