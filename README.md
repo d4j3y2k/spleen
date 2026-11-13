@@ -46,14 +46,26 @@ Claude discovery covers sessions you save or visit while observation is enabled,
 ## Requirements
 
 - An Apple silicon Mac. Tested on macOS 26; the deployment target is macOS 13, with a fallback material on earlier systems. Earlier macOS versions have not been independently verified.
-- Xcode 26 or later, including the macOS 26 SDK, selected as the active developer toolchain. There are no third-party package dependencies.
+- For source builds only: Xcode 26 or later, including the macOS 26 SDK, selected as the active developer toolchain, and Python 3 for package validation. There are no third-party package dependencies.
 - The Codex desktop app, Claude Desktop, or both.
 
-The optional Codex hook installer requires Python 3.11 or later. Switching and building the app do not require Python.
+The optional Codex hook installer requires Python 3.11 or later. A packaged app does not require Python or Xcode.
 
 ## Install
 
-The current setup is a build from source. For a first-run walkthrough, optional API key setup and troubleshooting, see the [setup guide](docs/SETUP.md).
+### Download a packaged app
+
+The [Releases page](https://github.com/d4j3y2k/spleen/releases) is the intended download location. **A notarized public download is not available yet.** The repository now includes packaging and a draft-release workflow; see [distribution status](docs/DISTRIBUTION.md).
+
+When a release is available, choose its **macos-arm64-notarized.zip** asset for Apple silicon, expand it, and move **Spleen.app** into `~/Applications`. Open that installed copy. A packaged app needs no Xcode, Python, Git, or API key. The extracted folder also includes `Install.command`, an optional checked installer you can run with `/bin/zsh ./Install.command` from that folder. It preserves your data and refuses unsafe replacements.
+
+Files labeled **preview** are developer previews, not notarized downloads. macOS may block them after download; use a notarized release or build from source. No installer removes quarantine or changes Gatekeeper. Intel binaries are not provided; the macOS 13 deployment target remains unverified below macOS 26.
+
+For a preview you trust, Apple documents [per-app opening options](https://support.apple.com/en-us/102445); this installer never changes those protections.
+
+### Build from source
+
+For a first-run walkthrough, optional API key setup and troubleshooting, see the [setup guide](docs/SETUP.md).
 
 ```sh
 git clone https://github.com/d4j3y2k/spleen.git
@@ -62,7 +74,7 @@ cd spleen
 open "$HOME/Applications/Spleen.app"
 ```
 
-The installer builds locally, verifies the signature, and copies the app to `~/Applications` without administrator access. Quit Spleen before installing or updating. There is no notarized download yet. The installer does not change Gatekeeper, grant Accessibility permissions, or install Codex hooks.
+The installer builds locally, verifies the signature, and copies the app to `~/Applications` without administrator access. Quit the installed Spleen before updating it. The installer does not change Gatekeeper, grant Accessibility permissions, or install Codex hooks.
 
 ## Build and run
 
@@ -70,7 +82,7 @@ To build without installing, use `./scripts/build.sh` and open `build/Spleen.app
 
 Spleen appears in the menu bar. Press **Control–Option–Space** to open it. For a first destination, use **Add conversation…** with a copied chat link, or let local Codex discovery populate the list. No API key is needed for switching, search, or local indicators.
 
-`build.sh` produces `build/Spleen.app` and signs it with the first Developer ID or Apple Development identity in your keychain, falling back to an ad-hoc signature. A stable identity matters: macOS ties the Accessibility grant to the code signature, and an ad-hoc signature changes on every build, which silently revokes the grant. Set `SPLEEN_SIGN_IDENTITY` to choose a certificate, or to `-` for ad-hoc on purpose.
+`build.sh` produces an Apple silicon `build/Spleen.app` and uses the first available Developer ID or Apple Development identity, falling back to ad-hoc signing. Set `SPLEEN_SIGN_IDENTITY` to choose a certificate, or `-` for ad-hoc. Preview packaging explicitly defaults to ad-hoc unless you choose a certificate. A stable identity can preserve Accessibility grants across rebuilds; ad-hoc rebuilds can require granting access again. Signing alone is not notarization. See [distribution and signing](docs/DISTRIBUTION.md).
 
 `run.sh` launches the app with its data in `.local-state/` inside the checkout, first quitting a copy of this build that is already running so a fresh build actually starts. Launching the `.app` directly reuses the last data directory. Before a directory has been chosen, it uses `~/Library/Application Support/Spleen/`. An explicit `--data-dir` overrides the remembered directory; quit before switching stores.
 

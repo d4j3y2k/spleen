@@ -1,34 +1,54 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
-mkdir -p .build/clang-cache .build/swiftpm-cache
-export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/clang-cache"
-swift build -c release --product Spleen --disable-sandbox --scratch-path .build --cache-path .build/swiftpm-cache
-APP="$PWD/build/Spleen.app"
+BUILD_ROOT="${SPLEEN_BUILD_ROOT:-$PWD/.build}"
+OUTPUT_DIR="${SPLEEN_OUTPUT_DIR:-$PWD/build}"
+mkdir -p "$BUILD_ROOT" "$OUTPUT_DIR"
+BUILD_ROOT="${BUILD_ROOT:A}"
+OUTPUT_DIR="${OUTPUT_DIR:A}"
+export CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/clang-cache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$BUILD_ROOT/clang-cache"
+BUILD_ARGS=(-c release --arch arm64 --disable-sandbox --scratch-path "$BUILD_ROOT" --cache-path "$BUILD_ROOT/swiftpm-cache"
+  -Xswiftc -gnone
+  -Xswiftc -file-prefix-map -Xswiftc "$PWD=."
+  -Xswiftc -file-prefix-map -Xswiftc "$BUILD_ROOT=./.build"
+  -Xswiftc -debug-prefix-map -Xswiftc "$HOME=/redacted"
+  -Xswiftc -file-compilation-dir -Xswiftc .)
+swift build "${BUILD_ARGS[@]}" --product Spleen
+BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+STAGE="$(mktemp -d "$OUTPUT_DIR/.spleen-build.XXXXXX")"
+trap 'rm -rf -- "$STAGE"' EXIT
+APP="$STAGE/Spleen.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/Spleen "$APP/Contents/MacOS/Spleen.next"
-mv -f "$APP/Contents/MacOS/Spleen.next" "$APP/Contents/MacOS/Spleen"
+cp "$BIN_DIR/Spleen" "$APP/Contents/MacOS/Spleen"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-swiftc Sources/Spleen/SpleenLogo.swift scripts/icon-generator/main.swift -o .build/spleen-icon-generator
-.build/spleen-icon-generator .build/Spleen.iconset
-iconutil --convert icns .build/Spleen.iconset --output "$APP/Contents/Resources/Spleen.icns"
-# Ad-hoc signatures change every build, and macOS keys the Accessibility grant to the
-# signature, so each rebuild silently lost Claude/Codex observation. A certificate
-# identity keeps the same designated requirement across builds. Override with
-# SPLEEN_SIGN_IDENTITY; set it to "-" for an ad-hoc build.
-# Sign by certificate hash: a renewed certificate can share its name with the old one,
-# and codesign refuses an ambiguous name.
-if [[ -n "${SPLEEN_SIGN_IDENTITY:-}" ]]; then
-  SIGN_IDENTITY="$SPLEEN_SIGN_IDENTITY"; SIGN_NAME="$SPLEEN_SIGN_IDENTITY"
-else
-  IDENTITY_LINE="$({ security find-identity -v -p codesigning 2>/dev/null || true; } \
-    | awk '/Developer ID Application|Apple Development/ { print; exit }')"
-  SIGN_IDENTITY="$(print -r -- "$IDENTITY_LINE" | awk '{ print $2 }')"
-  SIGN_NAME="$(print -r -- "$IDENTITY_LINE" | awk -F'"' '{ print $2 }')"
+swiftc Sources/Spleen/SpleenLogo.swift scripts/icon-generator/main.swift -o "$BUILD_ROOT/spleen-icon-generator"
+"$BUILD_ROOT/spleen-icon-generator" "$BUILD_ROOT/Spleen.iconset"
+iconutil --convert icns "$BUILD_ROOT/Spleen.iconset" --output "$APP/Contents/Resources/Spleen.icns"
+# Release SwiftPM binaries can retain debug paths. Remove debug symbols before signing.
+/usr/bin/strip -S "$APP/Contents/MacOS/Spleen"
+# Keep the stable source-build identity when one is available, preserving grants.
+SIGN_IDENTITY="${SPLEEN_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="$( { security find-identity -v -p codesigning 2>/dev/null || true; } | awk '/Developer ID Application|Apple Development/ { print $2; exit }')"
 fi
-if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then SIGN_IDENTITY="-"; SIGN_NAME="ad hoc (Accessibility access resets on every build)"; fi
-codesign --force --sign "$SIGN_IDENTITY" "$APP"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+SIGN_ARGS=()
+if [[ "$SIGN_IDENTITY" == '-' ]]; then
+  codesign --force --options runtime --timestamp=none "${SIGN_ARGS[@]}" --sign - "$APP"
+else
+  codesign --force --options runtime --timestamp "${SIGN_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP"
+fi
 codesign --verify --strict "$APP"
-print "Built: $APP"
-print "Signed with: $SIGN_NAME"
+python3 scripts/validate-package.py "$APP"
+if [[ -e "$OUTPUT_DIR/Spleen.app" || -L "$OUTPUT_DIR/Spleen.app" ]]; then
+  [[ -d "$OUTPUT_DIR/Spleen.app" && ! -L "$OUTPUT_DIR/Spleen.app" ]] || { print -u2 'Unsafe build output destination'; exit 1; }
+  mv "$OUTPUT_DIR/Spleen.app" "$STAGE/Previous.app"
+fi
+if ! mv "$APP" "$OUTPUT_DIR/Spleen.app"; then
+  [[ ! -d "$STAGE/Previous.app" ]] || mv "$STAGE/Previous.app" "$OUTPUT_DIR/Spleen.app"
+  exit 1
+fi
+
+print "Built: $OUTPUT_DIR/Spleen.app (arm64)"
+print 'Signing is separate from notarization; see docs/DISTRIBUTION.md.'

@@ -1,8 +1,18 @@
 # Set up Spleen
 
-Spleen currently ships as source to build on your Mac. You need an Apple silicon Mac, Xcode 26 or later selected as the active developer toolchain, and Codex Desktop, Claude Desktop, or both. It has been tested on macOS 26; earlier supported deployment targets remain unverified. A notarized installer is not provided by this repository.
+Spleen needs an Apple silicon Mac and Codex Desktop, Claude Desktop, or both. It has been tested on macOS 26; its macOS 13 deployment target remains unverified on earlier systems. Source builds need Xcode 26 or later selected as the active developer toolchain and Python 3. Packaged apps need no developer tools. Intel builds are not provided.
 
 Switching, search and local indicators work without an OpenAI API key. The Decisions assessment section below is optional.
+
+## Install a download
+
+Check the [Releases page](https://github.com/d4j3y2k/spleen/releases) for an Apple silicon asset ending in `macos-arm64-notarized.zip`. **Notarized public distribution is still pending**; preview assets are for developer evaluation and may be blocked after download. Do not disable Gatekeeper or remove quarantine to install a preview. The source build below remains available.
+
+For a notarized download, expand the ZIP and move `Spleen.app` into `~/Applications` (create that folder in Finder if needed), then open it. No developer tools are required. Quit the installed app before updating. To use the checked installer instead, open Terminal in the extracted folder and run `/bin/zsh ./Install.command`. It accepts `--destination /path/to/folder`, rejects a running destination, wrong app, symlink, changed signing team, invalid signature, or older build, and restores the previous app if the final move fails. `--allow-downgrade` is available for an intentional rollback. User data, preferences and credentials are separate and are never removed by the installer.
+
+Keep one installed copy of each companion app. Run each once before using Tab handoff. A downloaded Moonshine bundle includes optional browser-extension folders under `BrowserExtensions/`; these remain development extensions, not permanent Safari packages.
+
+For a preview you trust, Apple documents [per-app opening options](https://support.apple.com/en-us/102445); this installer never changes those protections.
 
 ## Build and start
 
@@ -17,7 +27,7 @@ The installer builds and installs into `~/Applications` without sudo. Quit any r
 
 For development, `./scripts/build.sh` creates `build/Spleen.app`, and `./scripts/run.sh` launches it with `.local-state/` inside the checkout. Opening the app directly, including an installed copy, reuses the last normal data directory. Before one has been chosen, it uses `~/Library/Application Support/Spleen/`. An explicit `--data-dir` overrides it. Quit before changing stores. Do not delete a development checkout while you still use its `.local-state/` store; preserve that directory first.
 
-The build selects an available Developer ID or Apple Development signing identity, or uses ad-hoc signing if none is available. Accessibility permission may need to be granted again after an ad-hoc rebuild. See [build and signing details](../README.md#build-and-run).
+Source builds select an available Developer ID or Apple Development identity, falling back to ad-hoc signing. Set `SPLEEN_SIGN_IDENTITY` to choose a certificate or `-` for ad-hoc. Preview packaging defaults to ad-hoc unless you choose a certificate. Accessibility permission may need to be granted again after an ad-hoc rebuild. See [build and signing details](../README.md#build-and-run).
 
 ## First conversation
 

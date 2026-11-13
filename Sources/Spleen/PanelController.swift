@@ -272,6 +272,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     func presentEditor() { present(assessOnOpen: false); model.edit() }
     func presentSettings() { present(assessOnOpen: false); model.showSettings() }
     func present(reset: Bool = true, orderFront: Bool = true, assessOnOpen: Bool = true, searchQuery: String? = nil) {
+        // Reopening is a new intent even if the outgoing launch has not replied.
+        // Its delayed success/failure must not close or restore this presentation.
+        handoffGeneration += 1; handoffPending = false
+
         guard !session.isPresented else {
             if orderFront && !panel.isKeyWindow {
                 panel.makeKeyAndOrderFront(nil)

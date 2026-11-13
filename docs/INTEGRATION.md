@@ -5,7 +5,7 @@ These are independent macOS apps with one optional connection: continuing the sa
 - [Moonshine](https://github.com/d4j3y2k/moonshine) finds open native windows and ordinary browser tabs.
 - [Spleen](https://github.com/d4j3y2k/spleen) finds saved and locally discovered AI conversations.
 
-Install each using its own `scripts/install.sh` and open each once. Their default install folder is `~/Applications`; neither needs the other to be installed. No shared server, API key, account, extension, or browser pairing code is involved in connecting the two apps.
+Install each app from its own notarized download when available, or build it with its own `scripts/install.sh`, then open each installed copy once. Preview archives are not notarized; see each repository’s distribution guide. No source checkouts are needed for packaged apps. Their default install folder is `~/Applications`; neither needs the other to be installed. No shared server, API key, account, extension, or browser pairing code is involved in connecting the two apps.
 
 Type in either app, then press **Tab** or **Shift–Tab**, or click the companion action in its footer. The other app opens its own search with exactly that query and the caret at the end. A closed app starts automatically. Your global shortcuts remain separate: **Control–Option–M** for Moonshine and **Control–Option–Space** for Spleen. Settings and editing forms keep normal Tab navigation.
 

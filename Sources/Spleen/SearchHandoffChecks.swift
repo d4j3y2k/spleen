@@ -73,6 +73,20 @@ func runSearchHandoffChecks() -> (passed: Int, failures: [String]) {
     _ = controller.handleKeyDown(event())
     completion?(true)
     check(!controller.session.isPresented, "accepted handoff ends the source presentation")
+    for accepted in [true, false] {
+        controller.receiveSearch(SearchHandoff(query: "outgoing", returnPID: 101), orderFront: false)
+        controller.switchSearch()
+        let staleCompletion = completion
+        controller.present(orderFront: false, assessOnOpen: false, searchQuery: "reopened")
+        let priorError = model.error
+        staleCompletion?(accepted)
+        check(controller.session.isPresented && model.query == "reopened" && model.error == priorError,
+              "late handoff completion cannot change an ordinary reopened panel")
+        let before = requests.count
+        controller.switchSearch()
+        check(requests.count == before + 1, "reopened panel can dispatch a new handoff")
+        completion?(true)
+    }
     controller.receiveSearch(SearchHandoff(query: "", returnPID: 101), orderFront: false)
     check(model.query.isEmpty && model.mode == .search, "empty incoming query clears stale text")
     model.showSettings()
