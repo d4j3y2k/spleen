@@ -3,10 +3,11 @@ import Darwin
 import SpleenCore
 
 enum TerminalNavigationError: LocalizedError {
-    case ended, automation, rexUnavailable, rexNotFrontmost, timeout
+    case ended, automation, replaced, rexUnavailable, rexNotFrontmost, timeout
     var errorDescription: String? {
         switch self {
         case .ended: return "This terminal session ended or changed. Reopen the compass for the current sessions."
+        case .replaced: return "Spleen was rebuilt or updated while it was running. Quit and reopen Spleen to switch terminal panes."
         case .automation: return "Couldn’t select the terminal pane. Check Spleen in System Settings → Privacy & Security → Automation."
         case .rexUnavailable: return "Couldn’t reach this Mac’s Rex session. Check that Rex and its local server are running."
         case .rexNotFrontmost: return "Couldn’t bring Rex to the front. Try opening the session again."
@@ -21,7 +22,11 @@ struct TerminalObservation {
     let problem: String?
 
     static func read(foreground: TerminalHost?) -> Self {
-        let samples = TerminalProcesses.scan()
+        let scanned = TerminalProcesses.scan()
+        let titles = TerminalNavigation.rexTitles(for: scanned.map(\.session))
+        let samples = scanned.map { row in
+            titles[row.session.pid].map { TerminalProcesses.Sample(session: row.session.retitled($0), activity: row.activity) } ?? row
+        }
         let sessions = samples.map(\.session)
         guard let host = foreground, sessions.contains(where: { $0.host == host }) else {
             return Self(samples: samples, selected: nil, problem: nil)
@@ -76,8 +81,12 @@ enum TerminalNavigation {
     """#
 
     private static func apple(_ host: TerminalHost, open target: String? = nil) throws -> String {
+        // macOS identifies the sender by Spleen's executable. Once a rebuild or update
+        // replaces that file, it refuses these events whatever the Automation setting says.
+        var path = [CChar](repeating: 0, count: 4096)
+        let failure: TerminalNavigationError = proc_pidpath(getpid(), &path, UInt32(path.count)) > 0 ? .automation : .replaced
         let data = try run("/usr/bin/osascript", ["-l", "JavaScript", "-e", script, "--",
-            host.bundleID, target == nil ? "selected" : "open", target ?? ""], timeout: 8, failure: .automation)
+            host.bundleID, target == nil ? "selected" : "open", target ?? ""], timeout: 8, failure: failure)
         return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -124,6 +133,66 @@ enum TerminalNavigation {
         return info.e_tdev
     }
 
+    private struct RexPane { let session: String, block: String }
+    private struct RexTitle: Decodable {
+        struct Owner: Decodable { let pid: Int32 }
+        let title: String
+        let owner: Owner?
+    }
+    /// Visits this Mac's Rex shell panes with each one's foreground terminal until `visit` returns true.
+    private static func eachRexPane(until deadline: TimeInterval, _ visit: (RexPane, UInt32) throws -> Bool) throws {
+        let list = try JSONDecoder().decode(RexSessionList.self, from: rex(["ls", "--json"]))
+        for entry in list.sessions {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw TerminalNavigationError.timeout }
+            let id = entry.session_id
+            guard let layout = try? inspect(id) else { continue }
+            for block in layout.windows.flatMap(\.layers).flatMap(\.blocks) where block.flavor == "com.superlogical.terminal.shell" {
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw TerminalNavigationError.timeout }
+                guard let tty = try? device(session: id, block: block.block_id) else { continue }
+                if try visit(RexPane(session: id, block: block.block_id), tty) { return }
+            }
+        }
+    }
+
+    // A process keeps its pane, so each one is looked up once and then asked only for its title.
+    private static var rexPanes: [String: RexPane] = [:]
+    private static let rexPaneLock = NSLock()
+
+    /// The title Rex lists each Claude Code tab under, by process. A title set by
+    /// another program in the pane, such as the shell, is not the session's.
+    static func rexTitles(for sessions: [TerminalSession]) -> [Int32: String] {
+        let live = sessions.filter { $0.host == .rex && $0.provider == .claude }
+        guard !live.isEmpty else { return [:] }
+        func key(_ session: TerminalSession) -> String { "\(session.pid)-\(session.startMicroseconds)" }
+        let keys = Set(live.map(key))
+        rexPaneLock.lock()
+        var panes = rexPanes.filter { keys.contains($0.key) }
+        rexPaneLock.unlock()
+        if panes.count < keys.count {
+            var found: [UInt32: RexPane] = [:]
+            try? eachRexPane(until: ProcessInfo.processInfo.systemUptime + 3) { pane, device in found[device] = pane; return false }
+            for session in live where panes[key(session)] == nil {
+                if let device = TerminalProcesses.info(session.pid)?.e_tdev { panes[key(session)] = found[device] }
+            }
+        }
+        var titles: [Int32: String] = [:]
+        for session in live {
+            guard let pane = panes[key(session)] else { continue }
+            guard let data = try? rex(["block", "call", "-s", pane.session, "-b", pane.block, "title"]),
+                  let value = try? JSONDecoder().decode(RexTitle.self, from: data) else {
+                panes[key(session)] = nil // The pane closed or moved; find it again on the next scan.
+                continue
+            }
+            if value.owner?.pid == session.pid, let title = TerminalSession.tabTitle(value.title, provider: session.provider) {
+                titles[session.pid] = title
+            }
+        }
+        rexPaneLock.lock()
+        rexPanes = panes
+        rexPaneLock.unlock()
+        return titles
+    }
+
     static func selected(in host: TerminalHost, among sessions: [TerminalSession]) throws -> TerminalSession? {
         let selected = try apple(host)
         if host != .rex { return sessions.first { $0.host == host && $0.tty == selected } }
@@ -144,28 +213,20 @@ enum TerminalNavigation {
             return
         }
         guard let tty = TerminalProcesses.info(session.pid)?.e_tdev else { throw TerminalNavigationError.ended }
-        let list = try JSONDecoder().decode(RexSessionList.self, from: rex(["ls", "--json"]))
-        let deadline = ProcessInfo.processInfo.systemUptime + 8
-        for entry in list.sessions {
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw TerminalNavigationError.timeout }
-            let id = entry.session_id
-            guard let layout = try? inspect(id) else { continue }
-            for window in layout.windows {
-                for block in window.layers.flatMap(\.blocks) where block.flavor == "com.superlogical.terminal.shell" {
-                    guard ProcessInfo.processInfo.systemUptime < deadline else { throw TerminalNavigationError.timeout }
-                    guard (try? device(session: id, block: block.block_id)) == tty else { continue }
-                    guard stillActive() else { throw TerminalNavigationError.ended }
-                    _ = try rex(["focus", "-s", id, block.block_id])
-                    _ = try apple(.rex, open: id)
-                    try confirmRexArrival {
-                        try selected(in: .rex, among: [session]) != nil
-                    }
-                    guard stillActive() else { throw TerminalNavigationError.ended }
-                    return
-                }
+        var arrived = false
+        try eachRexPane(until: ProcessInfo.processInfo.systemUptime + 8) { pane, device in
+            guard device == tty else { return false }
+            guard stillActive() else { throw TerminalNavigationError.ended }
+            _ = try rex(["focus", "-s", pane.session, pane.block])
+            _ = try apple(.rex, open: pane.session)
+            try confirmRexArrival {
+                try selected(in: .rex, among: [session]) != nil
             }
+            guard stillActive() else { throw TerminalNavigationError.ended }
+            arrived = true
+            return true
         }
-        throw TerminalNavigationError.ended
+        guard arrived else { throw TerminalNavigationError.ended }
     }
 
     // Rex can report the requested session and pane while another app still owns

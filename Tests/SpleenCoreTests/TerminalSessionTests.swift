@@ -28,6 +28,19 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertFalse(identified.matchesLiveRoute(session(id: UUID())))
     }
 
+    func testTabTitleReplacesGeneratedNameOnceTheConversationHasATopic() {
+        let live = session()
+        XCTAssertEqual(TerminalSession.tabTitle("  Fixture topic\n", provider: .claude), "Fixture topic")
+        XCTAssertEqual(TerminalSession.tabTitle("✳ Fixture topic", provider: .claude), "Fixture topic")
+        XCTAssertNil(TerminalSession.tabTitle("✳ Claude Code", provider: .claude))
+        XCTAssertNil(TerminalSession.tabTitle("", provider: .claude))
+        XCTAssertEqual(TerminalSession.tabTitle("Claude Code", provider: .codex), "Claude Code")
+        let titled = live.retitled("Fixture topic")
+        XCTAssertEqual(titled.destination.title, "Fixture topic")
+        XCTAssertEqual(titled.key, live.key)
+        XCTAssertTrue(live.matchesLiveRoute(titled))
+    }
+
     func testCodexThreadUsesOneRouteAndPreservesSavedLabel() {
         let uuid = UUID(), live = session(.ghostty, .codex, id: uuid)
         var catalog = CatalogCache()

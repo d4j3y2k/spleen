@@ -32,6 +32,20 @@ public struct TerminalSession: Equatable {
     }
     public var startedAt: Date { Date(timeIntervalSince1970: Double(startMicroseconds) / 1_000_000) }
     public var providerLabel: String { provider == .claude ? "Claude Code" : "Codex" }
+    public func retitled(_ title: String) -> Self {
+        Self(host: host, provider: provider, pid: pid, startMicroseconds: startMicroseconds, tty: tty,
+             folder: folder, sessionID: sessionID, title: title)
+    }
+    /// The tab title a CLI set once its conversation has a topic. Before that it shows only its own name.
+    public static func tabTitle(_ raw: String, provider: ContextProvider) -> String? {
+        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Some terminals receive a status glyph before the title.
+        if let mark = title.unicodeScalars.first, !CharacterSet.alphanumerics.contains(mark), title.dropFirst().first == " " {
+            title = title.dropFirst(2).trimmingCharacters(in: .whitespaces)
+        }
+        let generic = provider == .claude ? "Claude Code" : "Codex"
+        return title.isEmpty || title.caseInsensitiveCompare(generic) == .orderedSame ? nil : String(title.prefix(240))
+    }
     public var key: ConversationKey {
         let id = sessionID?.uuidString.lowercased()
         if provider == .codex, let id { return ConversationKey(provider: provider, id: id) }
