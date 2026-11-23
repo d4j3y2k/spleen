@@ -38,6 +38,22 @@ final class ClaudeDesktopRecentsTests: XCTestCase {
         XCTAssertEqual(snapshot.entries.map(\.destination.threadID), [chat, a])
     }
 
+    func testDesktopSearchIncludesCurrentCodeRoutesAndChatByHost() throws {
+        let session = "session_0123456789AbCdEfGhJkLmNp"
+        let code = "desktop-code:" + session
+        let chat = "01234567-89ab-cdef-0123-456789abcdef"
+        var memory = ContextMemory()
+        memory.record(event(code, title: "New work"), now: now)
+        memory.record(event(chat, title: "Earlier work", age: 2), now: now)
+        let visits = ClaudeDesktopRecents(memory, now: now)
+        XCTAssertEqual(visits.entries.first?.destination.threadID, code)
+        XCTAssertEqual(try visits.entries.first?.destination.navigationURL.absoluteString, "claude://claude.ai/epitaxy/" + session)
+        let snapshot = RelevanceSnapshot(state: SavedState(), catalog: CatalogCache(), context: memory, now: now)
+        let results = snapshot.results(query: "Claude Desktop")
+        XCTAssertEqual(Set(results.map(\.threadID)), Set([code, chat]))
+        XCTAssertTrue(results.allSatisfy { $0.sourceLabel == "Claude Desktop" })
+    }
+
     func testDuplicateTitlesStableIdentityLatestNonemptyTitleAndRestart() throws {
         var memory = ContextMemory()
         for item in [event(a, age: 3), event(b, age: 2), event(a, title: "Renamed", age: 1), event(a, title: "")] {

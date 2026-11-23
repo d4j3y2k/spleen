@@ -23,6 +23,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var handoffGeneration = 0
     private var pendingSearchCaret = false
     var dispatchSearch: (SearchHandoff, @escaping (Bool) -> Void) -> Void = { SearchHandoffLauncher.open($0, to: .moonshine, completion: $1) }
+    var dispatchTerminal: (TerminalSession) throws -> Void = TerminalNavigation.open
     var dispatchURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     var currentPID: () -> Int32? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var restorePID: (Int32) -> Void = { pid in NSRunningApplication(processIdentifier: pid)?.activate(options: []) }
@@ -53,7 +54,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             let pending = self.pendingSearchEvents
             self.pendingSearchEvents = []
             for event in pending {
-                guard self.session.isPresented else { break }
+                // A replayed ⌘U leaves search: keys typed before its view existed are dropped.
+                guard self.session.isPresented, self.model.mode == .search else { break }
                 if let forwarded = self.handleKeyDown(event) { self.panel.sendEvent(forwarded) }
             }
         }, compassFocusChanged: { [weak self] focus in
@@ -62,9 +64,13 @@ final class PanelController: NSObject, NSWindowDelegate {
         hostingView.sizingOptions = []
         panel.contentView = hostingView
         model.switchSearch = { [weak self] in self?.switchSearch() }
+        model.toggleUsage = { [weak self] in self?.toggleUsage() }
         model.openDestination = { [weak self] in self?.open($0) }
         model.openDot = { [weak self] in self?.openDot() }
         model.cancel = { [weak self] in self?.dismiss(.cancel) }
+        model.openUsagePage = { [weak self] in self?.openUsagePage($0) }
+        model.usage.announce = { [weak self] in self?.announceUsage($0) }
+        UsageDisplayMarker.panelVisible = { [weak self] in self?.panel.isVisible ?? false }
         modeObserver = model.$mode.removeDuplicates().sink { [weak self] mode in
             self?.resize(for: mode)
         }
@@ -109,6 +115,14 @@ final class PanelController: NSObject, NSWindowDelegate {
         if model.mode == .search, !pendingSearchEvents.isEmpty {
             traceNavigation(diagnosticKey, "buffer.searchMount")
             pendingSearchEvents.append(event)
+            return nil
+        }
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "u" {
+            if !event.isARepeat { toggleUsage() }
+            return nil
+        }
+        if model.mode == .usage, modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "r" {
+            if !event.isARepeat { model.usage.refreshAll() }
             return nil
         }
         if event.keyCode == 48, modifiers.isEmpty || modifiers == .shift,
@@ -266,6 +280,80 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
     func toggle() { session.isPresented ? dismiss(.cancel) : present() }
+    /// ⌘U: Usage Limits from any mode; in Usage, back to the remembered mode, or closed when
+    /// it was opened directly.
+    func toggleUsage() {
+        guard session.isPresented else { return }
+        if model.mode == .usage {
+            if model.leaveUsage() { pendingSearchCaret = model.mode == .search; placeSearchCaret() }
+            else { dismiss(.cancel) }
+        } else {
+            trace("usage.trigger")
+            resignPanelEditor()
+            model.showUsage()
+        }
+    }
+    /// The menu item and Option-click: idempotent show-or-raise. It never closes.
+    func presentUsage(orderFront: Bool = true) {
+        trace("usage.trigger")
+        if !session.isPresented {
+            model.beginUsageInvocation()
+            present(reset: false, orderFront: false, assessOnOpen: false)
+            if orderFront { orderInOnceUsageIsLaidOut() }
+        } else {
+            if model.mode != .usage { resignPanelEditor(); model.showUsage() }
+            if orderFront && !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
+        }
+    }
+    private var usageOrderIn = 0
+    /// A SwiftUI change made while the panel is hidden is not drawn if the panel is ordered in
+    /// before SwiftUI applies it; the last compass stays on screen until something else
+    /// publishes. So the panel comes in once the commit carrying Usage has happened, or after
+    /// a short fallback that also re-invalidates the view.
+    private func orderInOnceUsageIsLaidOut() {
+        usageOrderIn += 1
+        let generation = usageOrderIn
+        let orderIn = { [weak self] (laidOut: Bool) in
+            guard let self, self.usageOrderIn == generation else { return }
+            self.usageOrderIn += 1
+            guard self.session.isPresented, self.model.mode == .usage, !self.panel.isVisible else { return }
+            if !laidOut { self.model.objectWillChange.send(); self.model.usage.objectWillChange.send() }
+            self.panel.makeKeyAndOrderFront(nil)
+            trace(self.panel.isKeyWindow ? "panel.present.key" : "panel.present.notKey")
+            UsageDisplayMarker.mark("usage.content.displayed")
+        }
+        UsageDisplayMarker.hiddenCommit = { orderIn(true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { orderIn(false) }
+    }
+    /// Generic app reopen stays raise-only while Usage is visible.
+    func handleReopen() {
+        guard session.isPresented, model.mode == .usage else { present(); return }
+        if !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
+    }
+    private func resignPanelEditor() {
+        pendingSearchEvents = []
+        panel.makeFirstResponder(nil)
+    }
+    private func announceUsage(_ text: String) {
+        guard NSWorkspace.shared.isVoiceOverEnabled, session.isPresented, model.mode == .usage else { return }
+        NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
+            .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+    func openUsagePage(_ provider: ContextProvider) {
+        guard session.isPresented, let target = UsageLimitsModel.usagePages[provider] else { return }
+        let priorPID = session.priorPID
+        dismiss(.dispatch, endingPresentation: false)
+        if dispatchURL(target) {
+            trace("usage.page.accepted")
+            model.endPresentation()
+        } else {
+            trace("usage.page.rejected")
+            model.reportTransientError("Couldn’t open the \(provider.displayName) usage page. Check your default browser, then try again.")
+            present(reset: false)
+            session.present(priorPID: priorPID)
+            model.resumeUsage()
+        }
+    }
     /// Menu-bar entry points that open something other than the compass. Its cards are
     /// never on screen there, so these never assess them.
     func presentSearch() { present(assessOnOpen: false, searchQuery: ""); model.beginSearch() }
@@ -277,6 +365,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         handoffGeneration += 1; handoffPending = false
 
         guard !session.isPresented else {
+            // A direct Usage opening has no conversation snapshot; a caller that resets gets one.
+            if reset && !model.hasPreparedInvocation { model.prepare(assessOnOpen: assessOnOpen, searchQuery: searchQuery) }
             if orderFront && !panel.isKeyWindow {
                 panel.makeKeyAndOrderFront(nil)
                 trace(panel.isKeyWindow ? "panel.represent.key" : "panel.represent.notKey")
@@ -309,6 +399,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.makeFirstResponder(nil)
         compassKeyboardFocus = nil
         panel.orderOut(nil)
+        model.usage.close() // Every real hide cancels usage reads, including dispatch and focus loss.
         if endingPresentation {
             handoffGeneration += 1; handoffPending = false; pendingSearchCaret = false
             model.endPresentation()
@@ -340,6 +431,33 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
     func open(_ item: Destination) {
         guard session.isPresented else { return }
+        if let terminal = item.terminal {
+            guard model.canOpenTerminal(terminal) else {
+                model.reportTransientError(TerminalNavigationError.ended.localizedDescription)
+                return
+            }
+            let priorPID = session.priorPID
+            handoffGeneration += 1
+            let generation = handoffGeneration
+            dismiss(.dispatch, endingPresentation: false)
+            let dispatch = dispatchTerminal
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try dispatch(terminal) }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.handoffGeneration == generation else { return }
+                    switch result {
+                    case .success:
+                        self.model.endPresentation()
+                        self.model.acceptedTerminalDispatch(item)
+                    case .failure(let error):
+                        self.model.reportTransientError(error.localizedDescription)
+                        self.present(reset: false, assessOnOpen: false)
+                        self.session.present(priorPID: priorPID)
+                    }
+                }
+            }
+            return
+        }
         do {
             let target = try item.navigationURL
             let priorPID = session.priorPID
@@ -362,6 +480,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     func openDot() {
         guard let target = model.dotURL else {
             if !session.isPresented { present(assessOnOpen: false) } // Shows Settings, not cards.
+            else { model.ensurePreparedInvocation() } // So Settings → Back lands on a prepared search.
             model.showSettings()
             return
         }
@@ -375,6 +494,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             model.reportTransientError("Couldn’t open your Dot. Check its link in Settings.")
             present(reset: false)
             session.present(priorPID: priorPID)
+            model.resumeUsage()
         }
     }
     deinit {

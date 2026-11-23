@@ -29,7 +29,7 @@ public struct NavigationCompass {
         var seen = Set<ConversationKey>()
         let visited = recents.entries.filter { permitted($0.destination) }.map {
             Entry(destination: $0.destination, interaction: $0.interaction,
-                  reason: $0.interaction.kind == .creation ? .created : ($0.interaction.kind == .visit ? .visited : .selected))
+                  reason: !$0.interaction.kind.isNavigation ? .created : ($0.interaction.kind == .visit ? .visited : .selected))
         }
         // Preserve exact MRU ordering among alternatives. Current remains reachable
         // after them, without consuming the first quick-return slot.

@@ -55,7 +55,11 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
         ThreadInsight(id: "thr_preview_accessibility", folder: "/fixture/Spleen", updatedAt: instant, topic: "Long titles keep both timestamps visible.",
             timing: TurnTiming(lastCompletedAt: instant.addingTimeInterval(-300), checkedAt: instant))]
     try notes.save(to: fixture.appendingPathComponent("relevance.json"))
-    let populatedModel = AppModel(repository: repository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, now: { instant })
+    // Usage reads never run in a preview; each scenario installs invented readings.
+    let previewUsage = UsageLimitsModel(clock: { instant }, fetchers: [.codex: { _ in }, .claude: { _ in }],
+                                        scheduleTimer: { _, _ in {} }, observeWake: { _ in {} })
+    let populatedModel = AppModel(repository: repository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, now: { instant },
+                                  usage: previewUsage)
     let emptyRepository = StateRepository(url: fixture.appendingPathComponent("empty/state.json"))
     try emptyRepository.save(SavedState())
     let emptyModel = AppModel(repository: emptyRepository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, now: { instant })
@@ -81,7 +85,9 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             ("compass-high-contrast", .compass, "thr_preview_interaction"),
             ("compass-empty", .compass, nil),
             ("search", .search, nil), ("search-empty", .search, nil),
-            ("settings", .settings, nil), ("editor", .editor, nil)
+            ("settings", .settings, nil), ("editor", .editor, nil),
+            ("usage", .usage, nil), ("usage-loading", .usage, nil), ("usage-many", .usage, nil),
+            ("usage-many-end", .usage, nil), ("usage-expired", .usage, nil)
         ]
         for (name, mode, selectedThread) in scenarios {
             let model = name == "compass-empty" ? emptyModel : populatedModel
@@ -99,6 +105,12 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             case .editor:
                 size = SpleenStyle.managementSize
                 model.edit(state.destinations[5])
+            case .usage:
+                size = SpleenStyle.managementSize
+                model.showUsage()
+                let states = previewUsageStates(name, now: instant)
+                previewUsage.install(states.codex, for: .codex)
+                previewUsage.install(states.claude, for: .claude)
             }
             let canvasSize = NSSize(width: size.width + 48, height: size.height + 48)
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: canvasSize),
@@ -111,7 +123,8 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             let canvas = NativePreviewBacking(frame: NSRect(origin: .zero, size: canvasSize))
             canvas.dark = appearanceName == "dark"
             // Liquid Glass is composited by the window server, so snapshots use the material fallback.
-            let hosting = NSHostingView(rootView: SwitcherView(model: model).environment(\.spleenSnapshot, true))
+            let hosting = NSHostingView(rootView: SwitcherView(model: model).environment(\.spleenSnapshot, true)
+                .environment(\.usageScrollAnchorBottom, name == "usage-many-end"))
             hosting.sizingOptions = []
             hosting.frame = NSRect(x: 24, y: 24, width: size.width, height: size.height)
             canvas.addSubview(hosting)
@@ -140,6 +153,34 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
         }
     }
     return outputs
+}
+
+/// Invented readings for the Usage Limits previews; no real account data.
+private func previewUsageStates(_ name: String, now: Date) -> (codex: UsageLimitsModel.ProviderState, claude: UsageLimitsModel.ProviderState) {
+    typealias State = UsageLimitsModel.ProviderState
+    let owner = UsageOwner(user: .unknown)
+    let checked = now.addingTimeInterval(-40)
+    func window(_ id: String, _ label: String, used: Double, hours: Double?) -> UsageWindow {
+        UsageWindow(id: id, label: label, usedPercent: used, resetsAt: hours.map { now.addingTimeInterval($0 * 3600) })
+    }
+    func reading(_ windows: [UsageWindow]) -> UsageReading { UsageReading(windows: windows, checkedAt: checked, owner: owner) }
+    let codexWindows = [window("c5", "5-hour limit", used: 16, hours: 3.5), window("cw", "Weekly limit", used: 42, hours: 70)]
+    let claudeWindows = [window("a5", "5-hour limit", used: 0, hours: nil), window("aw", "Weekly limit", used: 37, hours: 50),
+                         window("am", "Weekly limit · Fixture", used: 100, hours: 50)]
+    switch name {
+    case "usage-loading":
+        return (State(inFlight: true, requestID: 1),
+                State(reading: reading(claudeWindows), inFlight: true, requestID: 2))
+    case "usage-many", "usage-many-end":
+        let many = (1...6).map { window("cm\($0)", "Fixture bucket \($0) · Weekly limit", used: Double($0 * 13), hours: Double($0) * 20) }
+        return (State(reading: reading(codexWindows + many), requestID: 1),
+                State(reading: reading(claudeWindows + [window("ao", "Weekly limit · connected apps", used: 5, hours: 160)]), requestID: 1))
+    case "usage-expired":
+        return (State(reading: reading([window("c5", "5-hour limit", used: 64, hours: -0.2), codexWindows[1]]), requestID: 1),
+                State(requestID: 1, lastAttemptAt: checked, lastFailure: .signedOut))
+    default:
+        return (State(reading: reading(codexWindows), requestID: 1), State(reading: reading(claudeWindows), requestID: 1))
+    }
 }
 
 private final class NativePreviewBacking: NSView {

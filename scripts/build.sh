@@ -33,7 +33,7 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
   SIGN_IDENTITY="$( { security find-identity -v -p codesigning 2>/dev/null || true; } | awk '/Developer ID Application|Apple Development/ { print $2; exit }')"
 fi
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-SIGN_ARGS=()
+SIGN_ARGS=(--entitlements Resources/Spleen.entitlements)
 if [[ "$SIGN_IDENTITY" == '-' ]]; then
   codesign --force --options runtime --timestamp=none "${SIGN_ARGS[@]}" --sign - "$APP"
 else

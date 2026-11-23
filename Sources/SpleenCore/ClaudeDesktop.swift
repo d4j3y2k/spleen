@@ -39,41 +39,52 @@ public enum ClaudeDesktopCodeTargetError: LocalizedError, Equatable {
     case invalidSessionLink
 
     public var errorDescription: String? {
-        "Use an existing Claude Desktop Code link: claude://claude.ai/epitaxy/local_<UUID>. Extra URL parameters aren't supported."
+        "Use an existing Claude Desktop Code link ending in /epitaxy/local_<UUID> or /epitaxy/session_<ID>."
     }
 }
 
 /// Experimental existing-session route verified on an installed Claude Desktop build,
 /// not a documented public API or proof that a particular session still exists.
-/// Desktop local_ identities are separate from ordinary Chat and Code engine IDs.
+/// Keep Desktop identities separate from ordinary Chat and terminal sessions.
 public struct ClaudeDesktopCodeTarget: Equatable, Hashable, Sendable {
-    private static let linkPrefix = "claude://claude.ai/epitaxy/local_"
-    private static let identityPrefix = "desktop-code:local_"
+    private static let linkPrefix = "claude://claude.ai/epitaxy/"
+    private static let identityPrefix = "desktop-code:"
 
     /// Canonical identity used by ClaudeDesktopObservation and saved destinations.
-    public let id: String
+    let sessionID: String
+    public var id: String { Self.identityPrefix + sessionID }
     public var key: ConversationKey { ConversationKey(provider: .claude, id: id) }
-    public var url: URL { URL(string: Self.linkPrefix + id.dropFirst(Self.identityPrefix.count))! }
+    public var url: URL { URL(string: Self.linkPrefix + sessionID)! }
 
     public init(_ input: String) throws {
         let raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard raw.hasPrefix(Self.linkPrefix) else { throw ClaudeDesktopCodeTargetError.invalidSessionLink }
-        id = Self.identityPrefix + (try Self.uuid(String(raw.dropFirst(Self.linkPrefix.count))))
+        try self.init(sessionID: String(raw.dropFirst(Self.linkPrefix.count)))
     }
 
     /// Accepts only the namespaced observation identity; never infer a Desktop
     /// session from a bare UUID, an engine session ID, or an ordinary Chat key.
     public init(conversationID: String) throws {
         guard conversationID.hasPrefix(Self.identityPrefix) else { throw ClaudeDesktopCodeTargetError.invalidSessionLink }
-        id = Self.identityPrefix + (try Self.uuid(String(conversationID.dropFirst(Self.identityPrefix.count))))
+        try self.init(sessionID: String(conversationID.dropFirst(Self.identityPrefix.count)))
     }
 
-    private static func uuid(_ value: String) throws -> String {
+    init(sessionID: String) throws {
         // Validate raw spelling before URL parsing can decode or normalize it.
+        if sessionID.hasPrefix("session_") {
+            let suffix = sessionID.dropFirst("session_".count).utf8
+            guard suffix.count == 24, suffix.allSatisfy({
+                (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+            }) else { throw ClaudeDesktopCodeTargetError.invalidSessionLink }
+            self.sessionID = sessionID
+            return
+        }
+        guard sessionID.hasPrefix("local_") else { throw ClaudeDesktopCodeTargetError.invalidSessionLink }
+        let value = String(sessionID.dropFirst("local_".count))
         guard value.utf8.count == 36, let uuid = UUID(uuidString: value),
               uuid.uuidString.lowercased() == value.lowercased() else {
             throw ClaudeDesktopCodeTargetError.invalidSessionLink
         }
-        return uuid.uuidString.lowercased()
+        self.sessionID = "local_" + uuid.uuidString.lowercased()
     }
 }

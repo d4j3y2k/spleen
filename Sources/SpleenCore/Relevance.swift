@@ -207,7 +207,7 @@ public struct RelevanceSnapshot: Equatable {
         let notes = Dictionary(uniqueKeysWithValues: insights.filter { metadata[$0.id]?.folder == $0.folder && metadata[$0.id]?.updatedAt == $0.updatedAt }.map { ($0.id, $0) })
         let visits = claudeRecents ?? ClaudeDesktopRecents(state.rememberRecents ? context : ContextMemory(recentsEnabled: false),
             excluding: catalog.effectivePolicy.excludedConversationIDs, now: now)
-        let visited = Dictionary(uniqueKeysWithValues: visits.entries.map { ($0.destination.conversationKey, $0.observedAt) })
+        var visited = Dictionary(uniqueKeysWithValues: visits.entries.map { ($0.destination.conversationKey, $0.observedAt) })
         // An accepted Spleen selection is useful recency, but is not an observed visit.
         // It cannot create a Claude candidate without a previously observed identity.
         var selected: [ConversationKey: Date] = [:]
@@ -221,16 +221,21 @@ public struct RelevanceSnapshot: Equatable {
         let savedKeys = Set(state.destinations.map(\.conversationKey))
         var merged = catalog.merged(with: state)
         merged.destinations += visits.entries.map(\.destination).filter { !savedKeys.contains($0.conversationKey) }
+        if state.rememberRecents {
+            for hint in context.observedSelections(at: now) where hint.source == "terminal-foreground" {
+                visited[hint.key] = hint.observedAt
+            }
+        }
         let baseline = merged.results(query: "", now: now)
         let initial = baseline.map { item -> Row in
-            let folder = item.provider == .codex ? metadata[item.threadID]?.folder : nil
+            let folder = item.terminal?.folder ?? (item.provider == .codex ? metadata[item.threadID]?.folder : nil)
             let project = folder.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent } ?? ""
             let prose = item.title + " " + (item.provider == .codex ? notes[item.threadID]?.text ?? "" : "")
             let provider = item.provider == .claude && (try? ClaudeDesktopCodeTarget(conversationID: item.threadID)) != nil
                 ? "Claude Code" : item.provider.displayName
             let selectedAt = state.rememberRecents
                 ? [item.lastOpenedAt, selected[item.conversationKey]].compactMap { $0 }.filter { $0 <= now }.max() : nil
-            return Row(destination: item, title: TextIndex.normalize(item.title), corpus: TextIndex.normalize(prose + " " + project + " " + provider), terms: TextIndex.terms(prose), folder: folder, visitedAt: visited[item.conversationKey], selectedAt: selectedAt, recordedSelectionAt: selected[item.conversationKey])
+            return Row(destination: item, title: TextIndex.normalize(item.title), corpus: TextIndex.normalize([prose, project, provider, item.sourceLabel].joined(separator: " ")), terms: TextIndex.terms(prose), folder: folder, visitedAt: visited[item.conversationKey], selectedAt: selectedAt, recordedSelectionAt: selected[item.conversationKey])
         }
         let hint = state.rememberRecents ? context.currentHint(at: now) : nil
         let matched = hint.flatMap { hint in initial.first { $0.destination.conversationKey == hint.key } }
@@ -407,10 +412,11 @@ public struct RelevanceSnapshot: Equatable {
             else if overlap(row) >= 1 { reason = "Related topic" }
             else if contextFolder != nil && absoluteProject(row.folder) == contextFolder { reason = "Same project" }
             else if row.visitedAt != nil && !savedKeys.contains(item.conversationKey) { reason = "Recently visited" }
+            else if item.terminal != nil { reason = "Open session" }
             else { reason = item.lastOpenedAt != nil ? "Recently opened" : "Saved chat" }
             let provider = item.provider == .claude && (try? ClaudeDesktopCodeTarget(conversationID: item.threadID)) != nil
                 ? "Claude Code · Experimental" : item.provider.displayName
-            return (item.conversationKey, ([provider, reason] + (project.map { [$0] } ?? [])).joined(separator: " · "))
+            return (item.conversationKey, ([item.terminal?.providerLabel ?? provider, item.terminal?.host.rawValue, reason].compactMap { $0 } + (project.map { [$0] } ?? [])).joined(separator: " · "))
         })
     }
     public func results(query: String) -> [Destination] {

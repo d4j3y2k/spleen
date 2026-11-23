@@ -48,13 +48,15 @@ struct SwitcherView: View {
     private var management: some View {
         SpleenGlassGroup(spacing: 10) {
             VStack(spacing: 0) {
-                SwitcherHeader(title: model.mode == .search ? "All conversations" : (model.mode == .settings ? "Settings" : "Save a conversation")) {
+                SwitcherHeader(title: model.mode == .search ? "All conversations" : (model.mode == .settings ? "Settings" : (model.mode == .usage ? "Usage limits" : "Save a conversation"))) {
                     if model.mode == .search { DotButton(model: model) }
+                    if model.mode == .usage { UsageRefreshButton(usage: model.usage) }
                     QuietIconButton(symbol: "xmark", label: "Dismiss · Escape") { model.cancel?() }
                         .padding(4).spleenSurface(.chrome)
                 }
                 if model.mode == .search { search }
                 else if model.mode == .editor { editor }
+                else if model.mode == .usage { usageLimits }
                 else { settings }
             }
         }
@@ -129,6 +131,9 @@ struct SwitcherView: View {
                 Button { model.switchSearch?() } label: {
                     KeyboardHint(key: "tab", label: "Moonshine")
                 }.buttonStyle(.plain).help("Continue this search in Moonshine")
+                Button { model.toggleUsage?() } label: {
+                    KeyboardHint(key: "⌘U", label: "limits")
+                }.buttonStyle(.plain).help("Show usage limits")
                 Spacer()
                 HStack(spacing: 2) {
                     QuietIconButton(symbol: "plus", label: "Add conversation") { model.edit() }
@@ -169,7 +174,7 @@ struct SwitcherView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(["Open \(item.title)", item.provider.displayName, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityLabel(["Open \(item.title)", item.sourceLabel, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
             .accessibilityValue(selected ? "Selected" : "")
             .accessibilityAddTraits(selected ? .isSelected : [])
             QuietIconButton(symbol: "ellipsis", label: "Edit \(item.title)") { model.edit(item) }
@@ -202,7 +207,7 @@ struct SwitcherView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(model.editorID == nil ? "Keep a conversation close." : "Make it easy to recognize.")
                             .font(.system(size: 22, weight: .semibold))
-                        Text("Give it a name you’ll remember, then add its link.")
+                        Text(model.editingTerminalOnly ? "This label and pin last while the session is open in Spleen." : "Give it a name you’ll remember, then add its link.")
                             .font(.system(size: 13)).foregroundStyle(.secondary)
                     }.padding(.bottom, 4)
                     editorField("NAME") {
@@ -211,12 +216,14 @@ struct SwitcherView: View {
                             .onAppear { DispatchQueue.main.async { titleFocused = true } }
                             .accessibilityLabel("Conversation name")
                     }
-                    editorField("CONVERSATION LINK") {
-                        TextField("Paste a Codex or Claude link", text: $model.editorLink)
-                            .accessibilityLabel("Codex or Claude conversation link")
+                    if !model.editingTerminalOnly {
+                        editorField("CONVERSATION LINK") {
+                            TextField("Paste a Codex or Claude link", text: $model.editorLink)
+                                .accessibilityLabel("Codex or Claude conversation link")
+                        }
+                        Text("Codex and Claude chat links are supported. Claude Code links are experimental. A thread ID opens in Codex.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Codex and Claude chat links are supported. Claude Code links are experimental. A thread ID opens in Codex.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Divider()
                     Toggle(isOn: $model.editorPinned) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -248,6 +255,18 @@ struct SwitcherView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
             content().spleenField()
+        }
+    }
+
+    private var usageLimits: some View {
+        VStack(spacing: 0) {
+            panel { UsageLimitsList(usage: model.usage) { model.openUsagePage?($0) } }
+            SpleenBar {
+                KeyboardHint(key: "⌘R", label: "refresh")
+                KeyboardHint(key: "esc", label: "close")
+                if model.usageReturnMode != nil { KeyboardHint(key: "⌘U", label: "back") }
+                Spacer()
+            }
         }
     }
 
@@ -298,6 +317,12 @@ struct SwitcherView: View {
                                 Spacer()
                                 Button("Clear history") { model.clearRecents() }.controlSize(.small)
                             }
+                        }
+                        SettingsSection(title: "Terminal sessions", symbol: "terminal") {
+                            settingsToggle("Include active Claude Code and Codex sessions", isOn: $model.terminalDraft)
+                            Text("Finds local sessions in Rex, Terminal and Ghostty. Allow Automation to remember visits and switch to the running pane.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            settingsStatus(model.terminalStatus)
                         }
                         SettingsSection(title: "Codex navigation", symbol: "arrow.triangle.branch") {
                             settingsToggle("Remember visited Codex Desktop sessions", isOn: $model.observeCodexDraft)

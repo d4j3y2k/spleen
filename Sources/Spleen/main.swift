@@ -38,12 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hotkey: HotKey!
     var statusItem: NSStatusItem!
     private var openItem: NSMenuItem?
+    private var optionClickMonitor: Any?
     private var terminationSignal: DispatchSourceSignal?
     /// Shows the shortcut on the menu bar item and its Open command. This is display only:
     /// the status menu is not the main menu, so AppKit never dispatches this key equivalent.
     /// The hotkey itself is registered separately.
     private func showShortcut(_ shortcut: Shortcut) {
-        statusItem?.button?.toolTip = "Spleen · \(shortcut.label)"
+        statusItem?.button?.toolTip = "Spleen · \(shortcut.label) · Option-click for usage limits"
         var mask: NSEvent.ModifierFlags = []
         if shortcut.control { mask.insert(.control) }
         if shortcut.option { mask.insert(.option) }
@@ -56,7 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--self-test") {
             let success = runAppTests()
             fflush(stdout)
-            exit(success ? 0 : 1)
+            // Usage timing needs NSApp.run's display cycle, so it runs once launching returns.
+            runUsageTimingTrials { timed in
+                fflush(stdout)
+                exit(success && timed ? 0 : 1)
+            }
+            return
         }
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--render-preview") {
@@ -147,12 +153,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showShortcut(model.state.shortcut)
         menu.addItem(withTitle: "Open Dot", action: #selector(openDot), keyEquivalent: "d")
         menu.addItem(withTitle: "Search conversations…", action: #selector(search), keyEquivalent: "")
+        menu.addItem(withTitle: "Usage Limits…", action: #selector(usage), keyEquivalent: "u") // Display only, like Open Dot.
         menu.addItem(withTitle: "Add conversation…", action: #selector(add), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Spleen", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
         statusItem.menu = menu
+        // Option-click opens Usage Limits; every other click, keyboard and VoiceOver path keeps the menu.
+        optionClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, let button = self.statusItem?.button, Self.isOptionClick(event, on: button) else { return event }
+            self.controller.presentUsage()
+            return nil
+        }
         // Restoring a standing opt-in never authorizes a request just by launching.
         if let request = pendingSearch {
             pendingSearch = nil; controller.receiveSearch(request)
@@ -165,6 +178,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func show() { controller.present() }
     @objc func openDot() { controller.openDot() }
     @objc func search() { controller.presentSearch() }
+    @objc func usage() { controller.presentUsage() }
+    /// Exactly Option, pressed inside the status button.
+    static func isOptionClick(_ event: NSEvent, on view: NSView) -> Bool {
+        guard event.type == .leftMouseDown, let window = view.window, event.window === window,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option else { return false }
+        return view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+    }
     @objc func add() { controller.presentEditor() }
     @objc func settings() { controller.presentSettings() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
@@ -173,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         flushDiagnosticTrace()
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        trace("application.reopen"); controller?.present(); return true
+        trace("application.reopen"); controller?.handleReopen(); return true
     }
 }
 
@@ -300,7 +320,7 @@ if CommandLine.arguments.contains("--navigation-compass-report") {
         let catalog = try CatalogCache.load(from: directory.appendingPathComponent("catalog.json"))
         let context = try ContextRepository(url: directory.appendingPathComponent("context.json")).load()
         let recent = RecentSessionSnapshot(state: state, catalog: catalog, context: context, now: instant, uptime: tick)
-        let current = recent.entries.first(where: { $0.interaction.kind != .creation }).flatMap { instant.timeIntervalSince($0.interaction.date) < ContextMemory.hintLifetime ? $0.destination.conversationKey : nil }
+        let current = recent.entries.first(where: { $0.interaction.kind.isNavigation }).flatMap { instant.timeIntervalSince($0.interaction.date) < ContextMemory.hintLifetime ? $0.destination.conversationKey : nil }
         let compass = NavigationCompass(state: state, catalog: catalog, context: context, currentKey: current, now: instant, uptime: tick)
         for entry in compass.visibleEntries(now: instant, uptime: tick) {
             print(entry.destination.title + " | " + (entry.interaction?.label(at: instant) ?? "Explicit pin"))
@@ -381,6 +401,14 @@ if CommandLine.arguments.contains("--codex-selection-probe") {
     if let data = try? encoder.encode(observer.diagnosticsSnapshot()) { print(String(decoding: data, as: UTF8.self)) }
     print("Observed local routes: \(count). Metadata only; no navigation, messages, or identities logged.")
     exit(count > 0 ? 0 : 1)
+}
+if CommandLine.arguments.contains("--terminal-check") {
+    let samples = TerminalProcesses.scan()
+    for host in TerminalHost.allCases {
+        let rows = samples.filter { $0.session.host == host }
+        print("\(host.rawValue): \(rows.filter { $0.session.provider == .claude }.count) Claude Code, \(rows.filter { $0.session.provider == .codex }.count) Codex")
+    }
+    exit(0)
 }
 if CommandLine.arguments.contains("--discovery-check") {
     do {

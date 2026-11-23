@@ -22,6 +22,8 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Spleen uses Automation to find the selected terminal pane and bring your running Claude Code or Codex session to the front.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>CFBundleURLTypes</key>

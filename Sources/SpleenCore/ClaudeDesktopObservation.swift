@@ -22,17 +22,18 @@ public struct ClaudeDesktopObservation: Equatable {
         guard url.utf8.count <= 128 else { return nil }
         // AX may omit the scheme. Only this exact known host can be normalized.
         let raw = url.hasPrefix("claude.ai/") ? "https://" + url : url
-        let candidate: String
         if raw.hasPrefix("https://claude.ai/chat/") {
             surface = .chat
-            candidate = String(raw.dropFirst("https://claude.ai/chat/".count))
-        } else if raw.hasPrefix("https://claude.ai/epitaxy/local_") {
+            let candidate = String(raw.dropFirst("https://claude.ai/chat/".count))
+            guard candidate.utf8.count == 36, let uuid = UUID(uuidString: candidate),
+                  uuid.uuidString.lowercased() == candidate.lowercased() else { return nil }
+            id = uuid.uuidString.lowercased()
+        } else if raw.hasPrefix("https://claude.ai/epitaxy/") {
             surface = .code
-            candidate = String(raw.dropFirst("https://claude.ai/epitaxy/local_".count))
+            let candidate = String(raw.dropFirst("https://claude.ai/epitaxy/".count))
+            guard let target = try? ClaudeDesktopCodeTarget(sessionID: candidate) else { return nil }
+            id = target.sessionID
         } else { return nil }
-        guard candidate.utf8.count == 36, let uuid = UUID(uuidString: candidate),
-              uuid.uuidString.lowercased() == candidate.lowercased() else { return nil }
-        id = (surface == .code ? "local_" : "") + uuid.uuidString.lowercased()
         let suffix = surface == .code ? " - Claude Code" : " - Claude"
         // Bound work before grapheme segmentation: one malicious combining-character
         // cluster can be arbitrarily large despite counting as one Character.

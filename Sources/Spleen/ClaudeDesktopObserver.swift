@@ -55,6 +55,7 @@ final class ClaudeDesktopObserver {
     private var processID: pid_t?
     private var registeredNotifications: [CFString] = []
     private let gate = ClaudeDesktopObservationGate()
+    private let exposure = ElectronAccessibilityExposure(bundleID: ClaudeDesktopObserver.bundleID)
     /// Attaching can fail while Claude is still launching. Retry with a backoff rather
     /// than stopping observation until Settings is saved again.
     private var attachFailures = 0
@@ -144,6 +145,7 @@ final class ClaudeDesktopObserver {
         for token in workspaceTokens { NSWorkspace.shared.notificationCenter.removeObserver(token) }
         workspaceTokens.removeAll()
         detach()
+        exposure.restore()
         attachFailures = 0; attachFailurePID = nil; nextAttachAttempt = 0
     }
 
@@ -185,6 +187,7 @@ final class ClaudeDesktopObserver {
             return true
         }
         count(\.foregroundClaudeFound)
+        _ = exposure.request(for: active)
         if processID == active.processIdentifier { return true }
         detach()
         if attachFailurePID != active.processIdentifier {

@@ -67,11 +67,17 @@ public struct Destination: Codable, Equatable, Identifiable {
     public var pinned: Bool
     public var lastOpenedAt: Date?
     public var provider: ContextProvider
+    /// A live pane attachment on a prepared card. Omitted from the saved link format.
+    public var terminal: TerminalSession? = nil
     /// True for a discovered chat saved because it was opened: it shows Codex's current
     /// title. False for a title typed in the editor. Nil for entries saved before this was
     /// recorded, until `SavedState.adoptCatalogTitles` can tell.
     public var followsCatalogTitle: Bool?
     public var conversationKey: ConversationKey { ConversationKey(provider: provider, id: threadID) }
+    public var sourceLabel: String {
+        if let terminal { return "\(terminal.providerLabel) · \(terminal.host.rawValue)" }
+        return provider == .claude ? "Claude Desktop" : provider.displayName
+    }
     public var navigationURL: URL {
         get throws {
             switch provider {
@@ -102,7 +108,7 @@ public struct Destination: Codable, Equatable, Identifiable {
     /// destination is: the same chat compares equal before and after that is recorded.
     public static func == (a: Destination, b: Destination) -> Bool {
         a.id == b.id && a.title == b.title && a.threadID == b.threadID && a.pinned == b.pinned &&
-            a.lastOpenedAt == b.lastOpenedAt && a.provider == b.provider
+            a.lastOpenedAt == b.lastOpenedAt && a.provider == b.provider && a.terminal == b.terminal
     }
 }
 

@@ -23,7 +23,7 @@ public struct RecentSessionSnapshot {
         func remember(_ key: ConversationKey, _ timestamp: ConversationTimestamp) {
             guard timestamp.date <= now, now.timeIntervalSince(timestamp.date) < ContextMemory.retention,
                   timestamp.date > (times[key]?.date ?? .distantPast) ||
-                    (timestamp.date == times[key]?.date && times[key]?.kind == .creation && timestamp.kind != .creation) else { return }
+                    (timestamp.date == times[key]?.date && times[key]?.kind.isNavigation == false && timestamp.kind.isNavigation) else { return }
             times[key] = timestamp
         }
         if state.rememberRecents {
@@ -36,6 +36,10 @@ public struct RecentSessionSnapshot {
                 }
             }
             for item in state.destinations {
+                if let terminal = item.terminal,
+                   terminal.startedAt > (state.recentHistoryClearedAt ?? .distantPast) {
+                    remember(item.conversationKey, ConversationTimestamp(kind: .terminalLaunch, date: terminal.startedAt))
+                }
                 if let date = item.lastOpenedAt { remember(item.conversationKey, ConversationTimestamp(kind: .selection, date: date)) }
             }
             for hint in context.recentInteractions(at: now) + context.observedSelections(at: now) {

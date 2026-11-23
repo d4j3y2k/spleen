@@ -24,7 +24,8 @@ extension RankingReplay {
             let valid: Bool
             if value.provider == .codex { valid = (try? ThreadTarget(value.id).id) == value.id }
             else if value.id.hasPrefix("desktop-code:") {
-                valid = value.id.range(of: "^desktop-code:local_[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil
+                valid = (try? ClaudeDesktopCodeTarget(conversationID: value.id)) != nil ||
+                    value.id.range(of: "^desktop-code:local_[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil
             } else { valid = (try? ClaudeChatTarget("claude://claude.ai/chat/\(value.id)").id) == value.id }
             guard valid else { throw ReplayError.invalidEvidence }
         }

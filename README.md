@@ -6,7 +6,7 @@ Press **Control–Option–Space** and a compass appears over whatever you are d
 
 **Works on its own.** Optionally install [Moonshine](https://github.com/d4j3y2k/moonshine) to search open windows and browser tabs alongside your conversations. With both apps installed, **Tab / Shift–Tab** carries the exact query between them, ready to continue typing. Neither app requires the other; each keeps its own result view, permissions, settings, and global shortcut. See [using the apps together](docs/INTEGRATION.md).
 
-Spleen treats a **Codex** thread, a **Claude** chat and a **Claude Code** session inside Claude Desktop as the same kind of thing: a destination you can jump to. It keeps a short local memory to help you return to recent work, and it stays out of the way otherwise. There is no chat window, no composer and no model in the loop by default.
+Spleen can switch to a **Codex** thread, a **Claude** chat, a **Claude Code** session in Claude Desktop, or a running Claude Code or Codex CLI in **Rex, Apple Terminal, or Ghostty**. It keeps a short local memory to help you return to recent work, and it stays out of the way otherwise. There is no chat window, no composer and no model in the loop by default.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/compass-dark.png">
@@ -25,6 +25,7 @@ Spleen treats a **Codex** thread, a **Claude** chat and a **Claude Code** sessio
 - **Pins and labels.** Pin a conversation to keep it within reach, or give it a label that is easier to recognize than its generated title.
 - **Live indicators.** A gently blinking monochrome dot beside **Working…** and slightly bolder titles identify active Codex and Claude Code conversations across the compass, recent sessions, and search. A separate blue dot marks an unread reply, and **Last reply** shows its time where known.
 - **Dot.** One fixed shortcut, ⌘D, that opens a conversation you nominate in Settings, outside of ranking.
+- **Usage limits.** Press ⌘U in the panel, Option-click the menu-bar icon, or choose **Usage Limits…** from its menu to see how much of each Codex and Claude subscription window is left and exactly when it resets: the provider's own reset time as your local date and minute, with a countdown that stays current while the view is open (hover for the second and time zone). The last reading appears at once and both providers refresh independently on each opening; ⌘R refreshes, ⌘U goes back. Spleen asks the installed clients with their existing sign-ins (Codex's app-server and Claude Code's structured usage request, with its local transcript scan turned off) and keeps readings in memory only. It sends no model prompt, needs no API key, reads no browser cookies or transcripts, and polls nothing while the view is closed. **Open usage page** opens the provider's own page for details.
 - **Native look.** An AppKit non-activating panel hosting SwiftUI, Liquid Glass on macOS 26 with a standard material fallback, light and dark palettes, and respect for reduced motion, reduced transparency and increased contrast.
 
 ## How it knows where you are
@@ -37,6 +38,7 @@ Spleen combines several sources, all local:
 | Codex app-server metadata | Thread titles, projects, short recent excerpts | The Codex desktop app |
 | Codex lifecycle hooks (optional) | Working events and completed turns | Reviewing and trusting the hooks in Codex |
 | Codex Desktop observation (optional) | Which local thread is selected, when exposed by the app | macOS Accessibility permission and a compatible Codex build |
+| Terminal sessions (optional) | Running local Claude Code and Codex CLIs, their projects, and which pane has focus | A supported terminal app and macOS Automation access for pane selection |
 | Claude Desktop observation (optional) | Which Claude chat or Code session is in front, and its last-reply age | macOS Accessibility permission |
 
 The Accessibility observers read route, title, selection and status metadata; they never read message text, screenshots or the clipboard. An observed Claude chat or Codex thread counts as visited only after it has stayed in front for about two seconds, so passing through one on the way to another does not place it in the compass. Spleen still knows which conversation is in front immediately, so opening it right after switching apps keeps the conversation you just left in the center. It also notes which application is in front, by bundle identifier only and never stored, so a conversation is never hidden as "current" while you are in a different app. Separately, Codex's local app-server supplies bounded recent message excerpts for search and recognition. See [docs/CONTEXT_CONTRACT.md](docs/CONTEXT_CONTRACT.md) for what is recorded and for how long.
@@ -47,7 +49,7 @@ Claude discovery covers sessions you save or visit while observation is enabled,
 
 - An Apple silicon Mac. Tested on macOS 26; the deployment target is macOS 13, with a fallback material on earlier systems. Earlier macOS versions have not been independently verified.
 - For source builds only: Xcode 26 or later, including the macOS 26 SDK, selected as the active developer toolchain, and Python 3 for package validation. There are no third-party package dependencies.
-- The Codex desktop app, Claude Desktop, or both.
+- Codex Desktop, Claude Desktop, or a local Claude Code or Codex CLI running in Rex, Apple Terminal, or Ghostty.
 
 The optional Codex hook installer requires Python 3.11 or later. A packaged app does not require Python or Xcode.
 
@@ -96,13 +98,17 @@ That runs the Swift package tests, rebuilds the app and runs its native self-tes
 
 ## Setting up observation
 
-Spleen works with no permissions at all. Saved and discovered conversations are searchable, and anything you open through Spleen is remembered. The two observers are opt-in:
+Spleen works with no permissions at all. Saved and discovered conversations are searchable, and anything you open through Spleen is remembered. Desktop and terminal observation are opt-in.
 
 1. Open **Settings** from Spleen's menu bar item.
 2. Turn on **Remember visited Claude Desktop sessions** and, if you use Codex, **Remember visited Codex Desktop sessions**.
 3. Press **Save settings**. macOS asks for Accessibility access the first time; allow it for Spleen.
 
 The Claude card in Settings reports what the observer is doing. "Claude Code selection observed" means it is working. If it says to allow Spleen in Accessibility after a rebuild, the signature changed: remove Spleen from System Settings → Privacy & Security → Accessibility, add `build/Spleen.app` again, and save settings once more.
+
+To include terminal CLIs, turn on **Settings → Terminal sessions → Include active Claude Code and Codex sessions**, keep **Remember recent selections on this Mac** on, and save. Search for a terminal name or project, or select a session from the compass or recents. Return focuses the existing tab or pane. Allow Spleen to control the relevant app when macOS asks. Ghostty needs a version exposing terminal TTYs and the focus command. Rex uses its bundled CLI and the local server.
+
+Terminal discovery covers directly hosted interactive CLI processes. Nested tmux sessions and remote SSH jobs are outside this integration. Process start time places a newly launched CLI in recents. Visiting its pane or selecting it in Spleen updates its navigation history. Where Codex exposes an exact local thread identity, the catalog and terminal share one card. A terminal-only card, including its label or pin, lasts while Spleen tracks the running process. Discovery reads local process, project and session metadata. It never captures scrollback or sends keystrokes. Working indicators require a provider status report.
 
 For Codex working and reply indicators, see [integrations/codex](integrations/codex/README.md). The hooks are metadata only, require Codex's own hook review, and are never installed or trusted by the Spleen app itself.
 

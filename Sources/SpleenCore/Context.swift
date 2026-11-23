@@ -80,7 +80,17 @@ public struct ForegroundHint: Equatable {
 /// Which application is in front, from its bundle identifier only. Transient placement
 /// input: a conversation cannot be current while its application is not in front, or
 /// while that application shows a page that is not a conversation (such as a new chat).
-public enum FrontApplication: Equatable { case provider(ContextProvider), providerWithoutConversation(ContextProvider), other }
+public enum FrontApplication: Equatable {
+    case provider(ContextProvider), providerWithoutConversation(ContextProvider), terminal(ConversationKey), other
+
+    public func contains(_ key: ConversationKey) -> Bool {
+        switch self {
+        case .terminal(let selected): return key == selected
+        case .provider(let provider): return provider == key.provider && !key.id.hasPrefix("terminal:")
+        default: return false
+        }
+    }
+}
 
 /// Pure, bounded local state. No app inspection, hook installation, or network work.
 public struct ContextMemory: Codable {
@@ -107,7 +117,7 @@ public struct ContextMemory: Codable {
            foreground.at >= (recordedAt ?? .distantPast), foreground.key != recorded {
             result = (foreground.key, recorded ?? previous)
         }
-        if let front, let current = result.current, front != .provider(current.provider) { return (nil, current) }
+        if let front, let current = result.current, !front.contains(current) { return (nil, current) }
         return result
     }
     public private(set) var events: [ContextEvent] = []

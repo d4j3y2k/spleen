@@ -1,4 +1,8 @@
-# Current status — 5 November 2026
+# Claude Desktop 6.28899.2 — 20 November 2026
+
+On this build, the focused window exposed the conversation web area after Spleen requested Electron’s `AXManualAccessibility` attribute. The foreground observer now requests it while observation is enabled and restores it on stop if Spleen found it off. The current Code session exposed a case-sensitive `/epitaxy/session_<24 ASCII letters or digits>` route. Opening a previously visited session and then dispatching the original session’s exact Desktop link returned to the original web-area URL in foreground Claude Desktop.
+
+## Status on 5 November 2026
 
 Claude Code now has working and unread indicators for the session displayed in its window, including while Claude is in the background. A separate opt-in status observer anchors enabled response/background-task controls to the exact open route. Sidebar read state also requires the current-page marker. Version 0.2.13 repairs a missing-spinner case that the initial sidebar-only check missed. The original foreground-only visit observer remains unchanged. See [live status coverage and verification](LIVE_INDICATORS.md#claude-desktop-code). The sections below preserve earlier investigation and version-specific results.
 
@@ -49,7 +53,7 @@ Candidate construction, validation, merging, and expiry snapshots run off the sh
 
 ## Typed opener and saved-state boundary
 
-`ClaudeDesktopCodeTarget` accepts only `claude://claude.ai/epitaxy/local_<UUID>` and emits the canonical form. Its key is `ConversationKey(.claude, "desktop-code:local_<UUID>")`, exactly matching the observer. It rejects ordinary Chat, mobile, web, new-session, parameterized, encoded, malformed, and other-host routes. The observation adapter itself remains metadata-only; the experimental opener is a separate capability.
+`ClaudeDesktopCodeTarget` accepts `claude://claude.ai/epitaxy/<session>` for both verified session formats. Its key is `ConversationKey(.claude, "desktop-code:<session>")`, exactly matching the observer. It rejects ordinary Chat, mobile, web, new-session, parameterized, encoded, malformed, and other-host routes. The observation adapter reads metadata and the experimental opener handles dispatch.
 
 Saving a Code destination uses saved-state schema **v3**. Legacy Codex and ordinary Chat entries retain their identity, labels, and pins; saving ordinary Chat after Code cannot downgrade the schema. Old builds reject/preserve the newer store rather than misreading a Code target. Manual links work without observation; learning visited sessions requires the existing explicit Settings opt-in and Spleen's own Accessibility permission. The user's current preference remains **off**.
 

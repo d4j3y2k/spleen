@@ -243,6 +243,50 @@ func runAppTests() -> Bool {
     check(large.results.prefix(11).allSatisfy { $0.title.hasPrefix("Synthetic chat 99") }, "1000-row model preserves title match precedence")
     check(opening[94] < 5 && searching[94] < 20, "1000-row cached model preparation and search stay within local latency budgets")
     print(String(format: "Warm AppModel / 1000 synthetic entries / 100 samples: opening p95 %.3f ms, search p95 %.3f ms. Not screen-render or physical-hotkey latency.", opening[94], searching[94]))
+    let terminalSession = TerminalSession(host: .rex, provider: .claude, pid: 123, startMicroseconds: UInt64(Date().timeIntervalSince1970 * 1_000_000),
+        tty: "/dev/ttys008", folder: "/fixture/sample", sessionID: UUID(), title: "Fixture session")
+    let terminalModel = AppModel(repository: StateRepository(url: temporary.appendingPathComponent("terminal/state.json")),
+        catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, terminalReader: { _ in
+            TerminalObservation(samples: [.init(session: terminalSession, activity: TerminalProcesses.claudeActivity("busy"))],
+                                selected: nil, problem: nil)
+        })
+    models.append(terminalModel)
+    let terminalPanel = PanelController(model: terminalModel)
+    terminalModel.showSettings(); terminalModel.terminalDraft = true; terminalModel.saveSettings()
+    let discoveryDeadline = Date().addingTimeInterval(3)
+    while !terminalModel.results.contains(where: { $0.terminal == terminalSession }) && Date() < discoveryDeadline {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+    }
+    terminalPanel.present(assessOnOpen: false)
+    if let item = terminalModel.results.first(where: { $0.terminal == terminalSession }) {
+        check(terminalModel.liveState(item)?.activity == .working, "Claude CLI busy status reaches the existing working indicator")
+        var terminalUsedDesktopURL = false
+        terminalPanel.dispatchURL = { _ in terminalUsedDesktopURL = true; return false }
+        terminalPanel.dispatchTerminal = { _ in
+            try TerminalNavigation.confirmRexArrival(timeout: 0, isFrontmost: { false }, paneIsSelected: { true })
+        }
+        terminalPanel.open(item)
+        let failureDeadline = Date().addingTimeInterval(2)
+        while !terminalPanel.session.isPresented && Date() < failureDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.005)) }
+        check(!terminalUsedDesktopURL && terminalPanel.session.isPresented && terminalModel.context.events.isEmpty &&
+              terminalModel.error == TerminalNavigationError.rexNotFrontmost.localizedDescription,
+              "a selected Rex pane still in the background restores the panel without recording a dispatch")
+        check((try? TerminalNavigation.confirmRexArrival(timeout: 0, isFrontmost: { true }, paneIsSelected: { false })) == nil,
+              "bringing Rex forward with a different pane cannot confirm dispatch")
+        terminalPanel.dispatchTerminal = { selected in
+            if selected != terminalSession { throw TerminalNavigationError.ended }
+            try TerminalNavigation.confirmRexArrival(timeout: 0, isFrontmost: { true }, paneIsSelected: { true })
+        }
+        terminalPanel.open(item)
+        let dispatchDeadline = Date().addingTimeInterval(2)
+        while terminalModel.context.events.isEmpty && Date() < dispatchDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.005)) }
+        check(terminalModel.context.events.contains { $0.key == item.conversationKey && $0.kind == .spleenDispatch },
+              "successful terminal focus records the same recents event as desktop dispatch")
+        check(terminalModel.state.destinations.isEmpty, "session-only dispatch keeps terminal routes out of the saved link store")
+        terminalModel.showSettings(); terminalModel.terminalDraft = false; terminalModel.saveSettings()
+        check(!terminalModel.canOpenTerminal(terminalSession) && !terminalModel.results.contains { $0.terminal != nil },
+              "disabling terminal discovery removes its cards and rejects a frozen route")
+    } else { check(false, "enabling terminal discovery prepares a switchable card") }
     let activity = runActivityIntegrationTests()
     count += activity.passed + activity.failures.count
     failures += activity.failures
@@ -261,6 +305,9 @@ func runAppTests() -> Bool {
     let keyboard = runKeyboardReadinessTests()
     count += keyboard.passed + keyboard.failures.count
     failures += keyboard.failures
+    let usage = runUsageLimitsTests()
+    count += usage.passed + usage.failures.count
+    failures += usage.failures
     let recents = runRecentSessionTests()
     count += recents.passed + recents.failures.count
     failures += recents.failures

@@ -191,7 +191,7 @@ struct CompassView: View {
         .candyText(selected, palette: SpleenStyle.candy(for: item.provider))
         .background(SpleenRowHighlight(selected: selected, palette: SpleenStyle.candy(for: item.provider)))
         .focused($keyboardFocus, equals: .recent(item.id))
-        .accessibilityLabel([item.title, item.provider.displayName, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([item.title, item.sourceLabel, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(selected ? "Selected" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint("Open conversation")
@@ -227,7 +227,7 @@ struct CompassView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 7) {
                     ProviderMark(provider: item.provider, size: 18, candy: selected)
-                    Text(item.provider.displayName).font(.system(size: 11, weight: .medium))
+                    Text(item.sourceLabel).font(.system(size: 11, weight: .medium))
                         .foregroundStyle(selected ? Color.primary.opacity(0.85) : Color.secondary)
                     if item.pinned {
                         Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.tertiary)
@@ -256,7 +256,7 @@ struct CompassView: View {
         }
         .buttonStyle(ConversationButtonStyle(selected: selected, provider: item.provider))
         .focused($keyboardFocus, equals: .choice(item.id))
-        .accessibilityLabel([item.title, item.provider.displayName, project, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([item.title, item.sourceLabel, project, model.timingLabel(item, separator: ", "), model.liveState(item)?.accessibilityText].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(selected ? "Selected" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint("Open conversation")
@@ -314,6 +314,9 @@ struct CompassView: View {
                 Button { model.switchSearch?() } label: {
                     KeyboardHint(key: "tab", label: "Moonshine")
                 }.buttonStyle(.plain).help("Continue this search in Moonshine")
+                Button { model.toggleUsage?() } label: {
+                    KeyboardHint(key: "⌘U", label: "limits")
+                }.buttonStyle(.plain).help("Show usage limits")
             }
             Spacer(minLength: 8)
             Button { model.beginSearch() } label: {

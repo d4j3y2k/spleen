@@ -35,6 +35,38 @@ final class ClaudeDesktopCodeTests: XCTestCase {
         XCTAssertThrowsError(try ClaudeChatTarget(link))
     }
 
+    func testCaseSensitiveSessionRouteSurvivesObservationSavingAndReopening() throws {
+        let session = "session_0123456789AbCdEfGhJkLmNp"
+        let path = "claude.ai/epitaxy/" + session
+        let link = "claude://" + path
+        let observed = try XCTUnwrap(ClaudeDesktopObservation(url: "https://" + path, title: "Work - Claude Code"))
+        let target = try ClaudeDesktopCodeTarget(link)
+        XCTAssertEqual(observed.key, target.key)
+        XCTAssertEqual(observed.title, "Work")
+        XCTAssertEqual(observed.key.id, "desktop-code:" + session)
+        XCTAssertNotEqual(try ClaudeDesktopCodeTarget(link.lowercased()).key, observed.key)
+        XCTAssertEqual(ClaudeDesktopObservation(url: path, title: "")?.key, observed.key)
+        XCTAssertNil(ClaudeDesktopObservation(url: link, title: ""))
+        var state = SavedState()
+        try state.upsert(id: nil, title: observed.title, link: link, pinned: false)
+        let decoded = try JSONDecoder().decode(SavedState.self, from: JSONEncoder().encode(state))
+        try decoded.validate()
+        XCTAssertEqual(try decoded.destinations.first?.navigationURL.absoluteString, link)
+        XCTAssertEqual(decoded.destinations.first?.conversationKey, observed.key)
+    }
+
+    func testSessionRouteRejectsUndispatchableSuffixes() {
+        let suffix = "0123456789AbCdEfGhJkLmNp"
+        for invalid in [suffix + "x", String(suffix.dropLast()), "_" + suffix.dropFirst(), "０" + suffix.dropFirst(),
+                        "%30" + suffix.dropFirst(), suffix + "?", suffix + "#", suffix + "/"] {
+            let session = "session_" + invalid
+            let path = "claude.ai/epitaxy/" + session
+            XCTAssertThrowsError(try ClaudeDesktopCodeTarget("claude://" + path))
+            XCTAssertThrowsError(try ClaudeDesktopCodeTarget(conversationID: "desktop-code:" + session))
+            XCTAssertNil(ClaudeDesktopObservation(url: "https://" + path, title: "Work"))
+        }
+    }
+
     func testRejectsParametersEncodingNormalizationAndNonUUIDs() {
         let prefix = "claude://claude.ai/epitaxy/local_"
         assertInvalid([

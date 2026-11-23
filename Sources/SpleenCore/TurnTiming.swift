@@ -1,7 +1,8 @@
 import Foundation
 
 public enum ConversationTimestampKind: Equatable {
-    case reply, visit, selection, creation
+    case reply, visit, selection, creation, terminalLaunch
+    public var isNavigation: Bool { self == .visit || self == .selection }
 }
 
 public struct ConversationTimestamp: Equatable {
@@ -27,6 +28,7 @@ public struct ConversationTimestamp: Equatable {
         case .visit: prefix = "Last visited"
         case .selection: prefix = "Last selected"
         case .creation: prefix = "Created"
+        case .terminalLaunch: prefix = "Started"
         }
         return "\(prefix) \(approximate ? "≈" : "")\(relative)"
     }
@@ -39,6 +41,7 @@ public struct ConversationTimestamp: Equatable {
         case .visit: prefix = "Last observed visit"
         case .selection: prefix = "Last selected through Spleen"
         case .creation: prefix = "Session created"
+        case .terminalLaunch: prefix = "Terminal process started"
         }
         return "\(prefix): \(date.formatted(date: .abbreviated, time: .standard))"
     }

@@ -197,9 +197,9 @@ public final class CodexCatalogClient {
             }
             throw CatalogError.timeout
         }
-        try send(["id": 0, "method": "initialize", "params": ["clientInfo": ["name": "spleen_catalog", "version": "0.2.0"]]])
+        try send(CodexHandshake.initialize(clientName: "spleen_catalog"))
         _ = try receive(0)
-        try send(["method": "initialized", "params": [:]])
+        try send(CodexHandshake.initialized)
         return try body(send, receive)
     }
 }

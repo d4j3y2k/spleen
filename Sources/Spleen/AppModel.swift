@@ -22,7 +22,16 @@ final class AppModel: ObservableObject {
         errorIsTransient = true
     }
     private func clearTransientError() { if errorIsTransient { error = nil } }
-    @Published var mode: Mode = .compass
+    @Published var mode: Mode = .compass {
+        didSet {
+            // Leaving Usage Limits cancels its reads; the readings stay in memory.
+            if oldValue == .usage && mode != .usage { usage.close(); usageReturnMode = nil }
+            // The panel resizes, and lays out, from `$mode` while the old value is still in
+            // place, which consumes SwiftUI's pending update. Nothing else on this model may
+            // publish after a Usage switch, so invalidate again with the new value set.
+            if (oldValue == .usage) != (mode == .usage) { objectWillChange.send() }
+        }
+    }
     private(set) var isPresentingModal = false
     @Published var editorID: UUID?
     @Published private(set) var editorCanRemove = false
@@ -45,6 +54,29 @@ final class AppModel: ObservableObject {
     @Published private(set) var codexContextStatus = "Off · Codex navigation observation is optional."
     private var observesCodex = false
     private var codexObserver: CodexDesktopObserver?
+    @Published var terminalDraft = false
+    @Published private(set) var terminalStatus = "Off"
+    private var terminalsEnabled = false
+    private var terminalGeneration = 0
+    private var terminalScanBusy = false
+    private var terminalVisit: (key: ConversationKey, since: TimeInterval, recorded: Bool)?
+    private var terminalSessions: [TerminalSession] = []
+    private var terminalEdits: [ConversationKey: (title: String, pinned: Bool)] = [:]
+    private let terminalReader: (TerminalHost?) -> TerminalObservation
+    private let terminalQueue = DispatchQueue(label: "spleen.terminal-scan", qos: .utility)
+    private var snapshotState: SavedState {
+        guard !terminalSessions.isEmpty else { return state }
+        var merged = TerminalSession.project(terminalSessions, onto: state, catalog: catalog)
+        guard !terminalEdits.isEmpty else { return merged }
+        for i in merged.destinations.indices {
+            if let edit = terminalEdits[merged.destinations[i].conversationKey] {
+                merged.destinations[i].title = edit.title
+                merged.destinations[i].pinned = edit.pinned
+            }
+        }
+        return merged
+    }
+    var editingTerminalOnly: Bool { editorConversationKey?.id.hasPrefix("terminal:") == true }
     @Published var observeClaudeDraft = false
     @Published private(set) var claudeContextStatus = "Off · Claude Desktop context is optional."
     private var observesClaude = false
@@ -55,7 +87,15 @@ final class AppModel: ObservableObject {
     private var claudeReplyURL: URL { repository.url.deletingLastPathComponent().appendingPathComponent("claude-reply-times.json") }
     private var contextSettingsURL: URL { repository.url.deletingLastPathComponent().appendingPathComponent("context-settings.json") }
     @Published var shortcutStatus = ""
-    enum Mode { case compass, search, editor, settings }
+    enum Mode { case compass, search, editor, settings, usage }
+    /// Subscription limits, observed directly by the Usage Limits view.
+    let usage: UsageLimitsModel
+    /// The mode ⌘U returns to; nil when Usage Limits was opened directly.
+    private(set) var usageReturnMode: Mode?
+    /// Set when a direct Usage opening superseded an invocation, so that invocation's queued
+    /// conversation work is skipped.
+    private var directUsageGeneration = 0
+    var openUsagePage: ((ContextProvider) -> Void)?
     @Published private(set) var compassItems: [Destination] = []
     @Published private(set) var recentSessions: [RecentSession] = []
     @Published private(set) var browsingRecents = false
@@ -106,7 +146,7 @@ final class AppModel: ObservableObject {
             let newest = readyRecents.visibleEntries(now: instant, uptime: uptime()).first
             let hasFreshSelection = newest.map { instant.timeIntervalSince($0.interaction.date) < ContextMemory.hintLifetime } ?? false
             // A conversation cannot be current while its application is not in front.
-            let stale = readyNavigation.currentKey.map { key in frontApplication.map { $0 != .provider(key.provider) } ?? false } ?? false
+            let stale = readyNavigation.currentKey.map { key in frontApplication.map { !$0.contains(key) } ?? false } ?? false
             let navigation = hasFreshSelection && !stale ? readyNavigation : readyNavigationNeutral
             return navigation.visibleEntries(now: now(), uptime: uptime(), limit: ContextMemory.maximumEvents).map(\.destination)
         }
@@ -200,6 +240,8 @@ final class AppModel: ObservableObject {
     let repository: StateRepository
     private var loadFailed = false
     var switchSearch: (() -> Void)?
+    /// The footer's ⌘U hint: the same toggle as the key.
+    var toggleUsage: (() -> Void)?
     var openDestination: ((Destination) -> Void)?
     var changeShortcut: ((Shortcut) throws -> Void)?
     var cancel: (() -> Void)?
@@ -219,14 +261,18 @@ final class AppModel: ObservableObject {
          automaticConsent: AutomaticAttentionConsent? = nil,
          automaticSetupFailure: String? = nil,
          desktopReadFetcher: (([ConversationKey], Date, UInt64, String) throws -> [LiveSessionState])? = nil,
+         terminalReader: @escaping (TerminalHost?) -> TerminalObservation = TerminalObservation.read,
          now: @escaping () -> Date = Date.init,
          uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          contextReader: @escaping (URL) throws -> ContextMemory = { try ContextRepository(url: $0).load() },
          catalogWriter: @escaping (CatalogCache, URL) throws -> Void = CatalogPersistence.write,
          snapshotBuilder: @escaping SnapshotBuilder = { state, catalog, notes, memory, instant, tick, attention in
              PreparedContext(state: state, catalog: catalog, insights: notes, context: memory, now: instant, uptime: tick, attention: attention)
-         }) {
+         },
+         usage: UsageLimitsModel? = nil) {
+        self.usage = usage ?? UsageLimitsModel.live()
         self.now = now; self.uptime = uptime; self.catalogWriter = catalogWriter; self.contextReader = contextReader
+        self.terminalReader = terminalReader
         self.snapshotBuilder = snapshotBuilder
         self.catalogFetcher = discoveryFetcher ?? { policy in
             if let catalogFetcher { return try catalogFetcher(policy.folders) }
@@ -276,6 +322,7 @@ final class AppModel: ObservableObject {
                 // A recorded interaction or visit aged out; refresh before the next opening.
                 self.rebuildSnapshot()
             }
+            self.pollTerminals()
             self.pollDesktopReadState()
         }
         attentionTimer?.tolerance = 0.5
@@ -294,6 +341,7 @@ final class AppModel: ObservableObject {
         }) }
         if !loadFailed, let data = try? Data(contentsOf: contextSettingsURL), data.count <= 4096,
            let settings = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            terminalsEnabled = settings["includeTerminalSessions"] ?? false
             observesClaude = settings["observeClaudeDesktop"] ?? false
             observesCodex = settings["observeCodexDesktop"] ?? false
             navigationFirst = settings["navigationFirstCompass"] ?? false
@@ -307,6 +355,7 @@ final class AppModel: ObservableObject {
                 DispatchQueue.main.async { self?.reloadActivityReports() }
             }
         }
+        pollTerminals()
         rebuildSnapshot()
     }
     func refreshResults() {
@@ -345,6 +394,8 @@ final class AppModel: ObservableObject {
         prepareMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // A direct Usage opening that superseded this one owns the panel now.
+            if self.directUsageGeneration > invocation { return }
             if self.presentationGeneration == invocation { self.refineOpeningIfReady() }
             self.refreshCatalog()
             self.pollDesktopReadState(force: true)
@@ -359,7 +410,38 @@ final class AppModel: ObservableObject {
                 !self.readyRecents.isFresh(now: self.now(), uptime: self.uptime())) { self.rebuildSnapshot() }
         }
     }
-    func endPresentation() { freezeOpening(); visibleInitialReturnKey = nil; presentationGeneration += 1; isPresented = false; visibleSnapshot = nil; visibleOrder = nil; visibleClaudeReplyTimes = nil }
+    func endPresentation() { freezeOpening(); visibleInitialReturnKey = nil; presentationGeneration += 1; isPresented = false; visibleSnapshot = nil; visibleOrder = nil; visibleClaudeReplyTimes = nil; usage.close() }
+    /// Whether this panel invocation has a conversation snapshot (a different fact from the
+    /// panel being on screen: a direct Usage opening has none).
+    var hasPreparedInvocation: Bool { isPresented }
+    /// A direct Usage opening that moves to a conversation surface prepares it first.
+    func ensurePreparedInvocation() { if !isPresented { prepare(assessOnOpen: false) } }
+    /// ⌘U inside the panel: query, selection, frozen order and drafts stay exactly as they are.
+    func showUsage() {
+        guard mode != .usage else { return }
+        usageReturnMode = mode
+        clearTransientError()
+        mode = .usage
+        usage.open()
+    }
+    /// Menu item and Option-click: no snapshot, ranking, catalog refresh or assessment.
+    func beginUsageInvocation() {
+        endPresentation()
+        directUsageGeneration = presentationGeneration
+        usageReturnMode = nil
+        clearTransientError()
+        mode = .usage
+        usage.open()
+    }
+    /// ⌘U in Usage: back to the remembered mode. Returns false for a direct opening.
+    @discardableResult func leaveUsage() -> Bool {
+        guard mode == .usage, let back = usageReturnMode else { return false }
+        usageReturnMode = nil
+        mode = back
+        return true
+    }
+    /// A hidden Usage panel shown again (a rejected launch) re-opens its reads.
+    func resumeUsage() { if mode == .usage { usage.open() } }
     func beginSearch(_ text: String = "") {
         freezeOpening(); browsingRecents = false; pendingRecentEntry = false; mode = .search; query = text
         if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
@@ -423,7 +505,9 @@ final class AppModel: ObservableObject {
         frontApplicationToken = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            self?.terminalVisit = nil
             self?.receiveFrontApplication(Self.frontApplication(for: app?.bundleIdentifier))
+            self?.pollTerminals()
         }
     }
     private func refreshImmediateReturn(at instant: Date) {
@@ -563,7 +647,7 @@ final class AppModel: ObservableObject {
         self.attention.assessments = Dictionary(uniqueKeysWithValues: self.attention.windows.values.compactMap { window in
             assessmentCache[window.contentVersion].map { (window.key, $0) }
         })
-        let generation = relevance.begin(), state = state, catalog = catalog, notes = insights.entries, memory = snapshotContext, attention = attention
+        let generation = relevance.begin(), state = snapshotState, catalog = catalog, notes = insights.entries, memory = snapshotContext, attention = attention
         let builtAt = now(), builtUptime = uptime()
         contextSignature = ContextRelevanceSignature(memory, now: builtAt)
         let usesRanking = rankingTransport != nil && !navigationFirst
@@ -575,7 +659,7 @@ final class AppModel: ObservableObject {
             let prepared = builder(state, catalog, notes, memory, builtAt, builtUptime, attention)
             guard isCurrent() else { return }
             let snapshot = prepared.contextual
-            let newest = prepared.recentSessions.entries.first(where: { $0.interaction.kind != .creation })
+            let newest = prepared.recentSessions.entries.first(where: { $0.interaction.kind.isNavigation })
             let recordedCurrent = newest.flatMap { entry in
                 builtAt.timeIntervalSince(entry.interaction.date) < ContextMemory.hintLifetime ? entry.destination.conversationKey : nil
             }
@@ -1035,13 +1119,16 @@ final class AppModel: ObservableObject {
     }
 
     func subtitle(_ item: Destination) -> String {
+        if let terminal = item.terminal {
+            return item.sourceLabel + " · " + terminal.tty.dropFirst(5)
+        }
         if item.conversationKey == visibleInitialReturnKey {
             let provider = item.provider == .claude && (try? ClaudeDesktopCodeTarget(conversationID: item.threadID)) != nil
                 ? "Claude Code · Experimental" : item.provider.displayName
             return ([provider, "Previous conversation"] + (preview(item).project.map { [$0] } ?? [])).joined(separator: " · ")
         }
         if navigationFirst {
-            return item.provider.displayName + (item.pinned ? " · Pinned" : " · Recent session")
+            return item.sourceLabel + (item.pinned ? " · Pinned" : " · Recent session")
         }
         return (visibleSnapshot ?? preparedSnapshot).subtitles[item.conversationKey] ?? item.provider.displayName
     }
@@ -1078,7 +1165,7 @@ final class AppModel: ObservableObject {
         guard !loadFailed else { error = "Saving is disabled because the existing file couldn't be loaded. Repair or move it, then restart Spleen.\n\(repository.url.path)"; return false }
         do { try repository.save(updated); state = updated; context.setRecentsEnabled(state.rememberRecents)
             immediateReturn = nil
-            readyRecents = RecentSessionSnapshot(state: state, catalog: catalog, context: context, now: now(), uptime: uptime())
+            readyRecents = RecentSessionSnapshot(state: snapshotState, catalog: catalog, context: context, now: now(), uptime: uptime())
             rebuildSnapshot(adoptVisible: true); return true }
         catch { self.error = "Couldn't save: \(error.localizedDescription)"; return false }
     }
@@ -1098,7 +1185,10 @@ final class AppModel: ObservableObject {
         if browsingRecents { return recentSessions.first { $0.id == selectedID }?.destination }
         return compassItems.first { $0.id == selectedID } ?? compassItems.first
     }
-    func recentLabel(_ entry: RecentSession) -> String { entry.interaction.label(at: now()) ?? "Recently used" }
+    func recentLabel(_ entry: RecentSession) -> String {
+        let time = entry.interaction.label(at: now()) ?? "Recently used"
+        return [entry.destination.terminal?.host.rawValue, time].compactMap { $0 }.joined(separator: " · ")
+    }
     func selectCompass(_ id: UUID) {
         guard compassItems.contains(where: { $0.id == id }) else { return }
         freezeOpening(); browsingRecents = false; pendingRecentEntry = false; selectedID = id
@@ -1141,6 +1231,17 @@ final class AppModel: ObservableObject {
     }
     func saveEditor() {
         do {
+            if editorPinned && snapshotState.destinations.filter({ $0.pinned && $0.conversationKey != editorConversationKey }).count >= 2 {
+                throw SpleenError.tooManyPins
+            }
+            if editingTerminalOnly, let key = editorConversationKey {
+                guard terminalSessions.contains(where: { $0.key == key }) else { throw TerminalNavigationError.ended }
+                let label = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !label.isEmpty else { throw SpleenError.emptyTitle }
+                terminalEdits[key] = (label, editorPinned)
+                rebuildSnapshot(adoptVisible: true); mode = .search; error = nil
+                return
+            }
             var next = state
             try next.upsert(id: editorID, title: editorTitle, link: editorLink, pinned: editorPinned)
             if commit(next) { mode = .search; error = nil }
@@ -1169,7 +1270,7 @@ final class AppModel: ObservableObject {
     func showSettings() {
         freezeOpening()
         dotLinkDraft = state.dotLink ?? ""
-        shortcutDraft = state.shortcut; rememberDraft = state.rememberRecents; navigationFirstDraft = navigationFirst; automaticDiscoveryDraft = catalog.effectivePolicy.scope == .automaticProjects; observeClaudeDraft = observesClaude; observeCodexDraft = observesCodex; mode = .settings; error = nil
+        shortcutDraft = state.shortcut; rememberDraft = state.rememberRecents; navigationFirstDraft = navigationFirst; automaticDiscoveryDraft = catalog.effectivePolicy.scope == .automaticProjects; observeClaudeDraft = observesClaude; observeCodexDraft = observesCodex; terminalDraft = terminalsEnabled; mode = .settings; error = nil
     }
     func saveSettings() {
         guard shortcutDraft.isValid else { error = SpleenError.invalidSettings.localizedDescription; return }
@@ -1197,10 +1298,19 @@ final class AppModel: ObservableObject {
                 navigationFirst = navigationFirstDraft
                 immediateReturn = nil
                 let newlyEnabledCodex = observeCodexDraft && !observesCodex
+                terminalGeneration += 1
+                terminalsEnabled = terminalDraft
+                if !terminalsEnabled || !enabled {
+                    terminalSessions = []; terminalEdits = [:]; terminalVisit = nil
+                    if case .terminal = frontApplication { frontApplication = .other; observedForeground = nil }
+                    _ = updateLiveAttention { $0.disconnect(source: "terminal-status", at: now()); return false }
+                    terminalStatus = terminalsEnabled ? "Paused while recent selections are off." : "Off"
+                }
+                pollTerminals()
                 observesCodex = observeCodexDraft
                 observesClaude = observeClaudeDraft
                 do {
-                    let settings = try JSONEncoder().encode(["observeClaudeDesktop": observesClaude, "observeCodexDesktop": observesCodex, "navigationFirstCompass": navigationFirst])
+                    let settings = try JSONEncoder().encode(["includeTerminalSessions": terminalsEnabled, "observeClaudeDesktop": observesClaude, "observeCodexDesktop": observesCodex, "navigationFirstCompass": navigationFirst])
                     try PrivateFile.write(settings, to: contextSettingsURL)
                 } catch { self.error = "Context preference could not be saved." }
                 configureClaudeObserver(promptForPermission: newlyEnabledClaude)
@@ -1231,13 +1341,21 @@ final class AppModel: ObservableObject {
     func clearRecents() {
         guard !loadFailed else { return }
         contextReadGeneration += 1
+        terminalGeneration += 1
         context.clear()
         clearClaudeReplyTimes()
         let url = contextURL, enabled = state.rememberRecents
         contextQueue.async { _ = try? ContextRepository(url: url).setRecentsEnabled(enabled, clear: true) }
         var next = state; next.clearRecents(at: now()); _ = commit(next)
     }
-    func acceptedDispatch(_ id: UUID) {
+    func acceptedTerminalDispatch(_ item: Destination) {
+        guard let terminal = item.terminal else { return }
+        let selected = snapshotState.destinations.first { candidate in
+            candidate.terminal.map(terminal.matchesLiveRoute) == true
+        } ?? item
+        acceptedDispatch(selected.id, confirmed: selected)
+    }
+    func acceptedDispatch(_ id: UUID, confirmed: Destination? = nil) {
         // A context read already in flight must not restore an older Claude (or
         // Codex) selection over this accepted local navigation.
         contextReadGeneration += 1
@@ -1248,10 +1366,11 @@ final class AppModel: ObservableObject {
         var next = state
         // PanelController ends presentation immediately before this callback. Results
         // still hold the dispatched invocation, even if its prepared index changed.
-        let target = recentSessions.first { $0.id == id }?.destination ?? results.first { $0.id == id } ?? (visibleOrder ?? preparedOrder).first { $0.id == id }
+        let target = confirmed ?? recentSessions.first { $0.id == id }?.destination ?? results.first { $0.id == id } ?? (visibleOrder ?? preparedOrder).first { $0.id == id }
             ?? catalog.merged(with: state).destinations.first { $0.id == id }
         if !next.destinations.contains(where: { $0.id == id }), next.rememberRecents,
-           var item = target, item.provider == .codex {
+           var item = target, item.provider == .codex, !item.threadID.hasPrefix("terminal:") {
+            item.terminal = nil
             item.followsCatalogTitle = true // Shows Codex's current title, not a frozen copy.
             next.destinations.append(item)
         }
@@ -1268,7 +1387,7 @@ final class AppModel: ObservableObject {
                 let url = contextURL, instant = now()
                 contextQueue.async { _ = try? ContextRepository(url: url).record(priorEvent, now: instant) }
             }
-            let project = item.provider == .codex ? catalog.entries.first { $0.id == item.threadID }?.folder : nil
+            let project = item.terminal?.folder ?? (item.provider == .codex ? catalog.entries.first { $0.id == item.threadID }?.folder : nil)
             let instant = now()
             let event = ContextEvent(key: item.conversationKey, project: project, kind: .spleenDispatch, observedAt: instant, source: "spleen", evidence: .spleenInteraction)
             context.record(event, now: instant)
@@ -1279,7 +1398,7 @@ final class AppModel: ObservableObject {
         // The dispatched app is coming to the front. Until its activation arrives, the build
         // started below must not see the old app in front, which would demote the chat
         // just opened to "previous" and wipe the quick return built here.
-        if let target { frontApplication = .provider(target.provider) }
+        if let target { frontApplication = target.terminal == nil ? .provider(target.provider) : .terminal(target.conversationKey) }
         _ = commit(next)
         if let target {
             let previous = context.previousDistinct(at: now())?.key ?? priorCurrent
@@ -1314,6 +1433,72 @@ final class AppModel: ObservableObject {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return try? encoder.encode(memory)
     }
+    private func pollTerminals() {
+        guard terminalsEnabled, state.rememberRecents, !loadFailed, !terminalScanBusy else { return }
+        terminalScanBusy = true
+        let generation = terminalGeneration
+        let frontID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let host = TerminalHost.allCases.first { $0.bundleID == frontID }
+        let read = terminalReader
+        terminalQueue.async { [weak self] in
+            let observation = read(host)
+            let sessions = observation.samples.map(\.session)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.terminalScanBusy = false
+                guard generation == self.terminalGeneration, self.terminalsEnabled, self.state.rememberRecents else { return }
+                let changed = self.terminalSessions != sessions
+                self.terminalSessions = sessions
+                let keys = Set(sessions.map(\.key))
+                self.terminalEdits = self.terminalEdits.filter { keys.contains($0.key) }
+                let instant = self.now()
+                let activityChanged = self.updateLiveAttention { attention in
+                    for row in observation.samples where row.activity != nil {
+                        attention.accept(LiveSessionState(key: row.session.key, source: "terminal-status",
+                            observedAt: instant, sequence: UInt64(self.uptime() * 1000),
+                            activity: row.activity, isUnread: nil), now: instant)
+                    }
+                    return false
+                }
+                let status = observation.problem ?? (sessions.isEmpty ? "Waiting for a local Claude Code or Codex terminal." :
+                    "\(sessions.count) active terminal session\(sessions.count == 1 ? "" : "s").")
+                if status != self.terminalStatus { self.terminalStatus = status }
+                if host != nil, NSWorkspace.shared.frontmostApplication?.bundleIdentifier == frontID {
+                    if let selected = observation.selected, self.snapshotState.destinations.contains(where: { $0.terminal?.key == selected.key }) {
+                        self.observeTerminal(selected)
+                    } else {
+                        self.terminalVisit = nil
+                        self.receiveFrontApplication(.other)
+                    }
+                }
+                if changed || activityChanged { self.rebuildSnapshot() }
+            }
+        }
+    }
+    private func observeTerminal(_ session: TerminalSession) {
+        let key = session.key, instant = now()
+        if terminalVisit?.key != key || frontApplication != .terminal(key) {
+            terminalVisit = (key, uptime(), false)
+            observedForeground = ForegroundHint(key: key, at: instant)
+            receiveFrontApplication(.terminal(key))
+        }
+        guard let visit = terminalVisit, !visit.recorded, uptime() - visit.since >= 2 else { return }
+        terminalVisit?.recorded = true
+        let event = ContextEvent(key: key, project: session.folder, topic: session.title, kind: .selectedConversation,
+            observedAt: instant, source: "terminal-foreground", evidence: .observedSelection)
+        contextReadGeneration += 1
+        context.record(event, now: instant)
+        let url = contextURL
+        contextQueue.async { _ = try? ContextRepository(url: url).record(event, now: instant) }
+        rebuildSnapshot()
+    }
+    func canOpenTerminal(_ session: TerminalSession) -> Bool {
+        terminalsEnabled && state.rememberRecents && snapshotState.destinations.contains { item in
+            guard let live = item.terminal else { return false }
+            return session.matchesLiveRoute(live)
+        }
+    }
+
     private func configureCodexObserver(promptForPermission: Bool) {
         guard !loadFailed, observesCodex, state.rememberRecents else {
             codexObserver?.stop(); codexObserver = nil
@@ -1448,6 +1633,8 @@ final class AppModel: ObservableObject {
     /// Quitting: stop the observers, which also returns Codex's accessibility setting, and
     /// wait for queued saves so a change made just before Quit is kept.
     func prepareForTermination() {
+        usage.terminate()
+        terminalGeneration += 1; terminalsEnabled = false
         claudeObserver?.stop(); claudeStatusObserver?.stop(); codexObserver?.stop()
         contextQueue.sync {}; insightSaveQueue.sync {}; catalogSaveQueue.sync {}
     }
