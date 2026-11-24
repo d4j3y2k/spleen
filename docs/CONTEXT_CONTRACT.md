@@ -16,6 +16,12 @@ Running sessions appear as cards that exist only in memory. They are never writt
 
 Usage limits are held in memory only. Account identities are compared as truncated SHA-256 hashes and are never written or logged. Each read runs the installed Codex or Claude Code client in an empty directory under Spleen's caches folder and sends no prompt. Claude Code runs with no settings, hooks, MCP servers or tools, and saves no session.
 
+## Usage trend — 23 November 2026
+
+The usage trend is off by default and is saved as `trackUsageTrend` in `context-settings.json`. While it is on, Spleen makes the same usage read for each provider when it starts and every five minutes after (timer tolerance 30 seconds), except while the Usage Limits view is open, while Low Power Mode is on, while that provider's previous read is still running, or during a pause the provider asked for. One sample of both providers measured about 0.6 s of CPU on the author's Mac, which is about 0.2 % of one core at this interval.
+
+Readings taken while it is on, by the view or in the background, are kept in `usage-history.json` in the data directory (owner-only): for each window, its id, reset time, length in minutes, and points of time and percent used. It holds no account identity, label or plan. A run of equal readings keeps only its first and latest point, a window keeps at most 720 points, and a window is dropped once its reset has passed. A window's line starts again when its reset time changes by more than five minutes, which covers both a new period and a different account. A confirmed account change or sign-out seen while Spleen is running also removes that provider's lines. Turning the setting off stops the background reads and deletes the file.
+
 # Local context and discovery contract
 
 ## Turn timing and future activity adapters

@@ -55,6 +55,8 @@ final class AppModel: ObservableObject {
     private var observesCodex = false
     private var codexObserver: CodexDesktopObserver?
     @Published var terminalDraft = false
+    @Published var usageTrendDraft = false
+    private var usageTrendEnabled = false
     @Published private(set) var terminalStatus = "Off"
     private var terminalsEnabled = false
     private var terminalGeneration = 0
@@ -270,7 +272,7 @@ final class AppModel: ObservableObject {
              PreparedContext(state: state, catalog: catalog, insights: notes, context: memory, now: instant, uptime: tick, attention: attention)
          },
          usage: UsageLimitsModel? = nil) {
-        self.usage = usage ?? UsageLimitsModel.live()
+        self.usage = usage ?? UsageLimitsModel.live(historyURL: repository.url.deletingLastPathComponent().appendingPathComponent("usage-history.json"))
         self.now = now; self.uptime = uptime; self.catalogWriter = catalogWriter; self.contextReader = contextReader
         self.terminalReader = terminalReader
         self.snapshotBuilder = snapshotBuilder
@@ -342,6 +344,8 @@ final class AppModel: ObservableObject {
         if !loadFailed, let data = try? Data(contentsOf: contextSettingsURL), data.count <= 4096,
            let settings = try? JSONDecoder().decode([String: Bool].self, from: data) {
             terminalsEnabled = settings["includeTerminalSessions"] ?? false
+            usageTrendEnabled = settings["trackUsageTrend"] ?? false
+            self.usage.setTrendTracking(usageTrendEnabled)
             observesClaude = settings["observeClaudeDesktop"] ?? false
             observesCodex = settings["observeCodexDesktop"] ?? false
             navigationFirst = settings["navigationFirstCompass"] ?? false
@@ -1270,7 +1274,7 @@ final class AppModel: ObservableObject {
     func showSettings() {
         freezeOpening()
         dotLinkDraft = state.dotLink ?? ""
-        shortcutDraft = state.shortcut; rememberDraft = state.rememberRecents; navigationFirstDraft = navigationFirst; automaticDiscoveryDraft = catalog.effectivePolicy.scope == .automaticProjects; observeClaudeDraft = observesClaude; observeCodexDraft = observesCodex; terminalDraft = terminalsEnabled; mode = .settings; error = nil
+        shortcutDraft = state.shortcut; rememberDraft = state.rememberRecents; navigationFirstDraft = navigationFirst; automaticDiscoveryDraft = catalog.effectivePolicy.scope == .automaticProjects; observeClaudeDraft = observesClaude; observeCodexDraft = observesCodex; terminalDraft = terminalsEnabled; usageTrendDraft = usageTrendEnabled; mode = .settings; error = nil
     }
     func saveSettings() {
         guard shortcutDraft.isValid else { error = SpleenError.invalidSettings.localizedDescription; return }
@@ -1309,8 +1313,10 @@ final class AppModel: ObservableObject {
                 pollTerminals()
                 observesCodex = observeCodexDraft
                 observesClaude = observeClaudeDraft
+                usageTrendEnabled = usageTrendDraft
+                usage.setTrendTracking(usageTrendEnabled)
                 do {
-                    let settings = try JSONEncoder().encode(["includeTerminalSessions": terminalsEnabled, "observeClaudeDesktop": observesClaude, "observeCodexDesktop": observesCodex, "navigationFirstCompass": navigationFirst])
+                    let settings = try JSONEncoder().encode(["trackUsageTrend": usageTrendEnabled, "includeTerminalSessions": terminalsEnabled, "observeClaudeDesktop": observesClaude, "observeCodexDesktop": observesCodex, "navigationFirstCompass": navigationFirst])
                     try PrivateFile.write(settings, to: contextSettingsURL)
                 } catch { self.error = "Context preference could not be saved." }
                 configureClaudeObserver(promptForPermission: newlyEnabledClaude)

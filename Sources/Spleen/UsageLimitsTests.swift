@@ -187,6 +187,93 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
         check(q.shutdowns() == 1 && !q.model.isOpen, "quit closes and reaps through the shutdown hook")
     }
 
+    // MARK: Trend
+
+    do {
+        final class Store { var saved: [UsageHistory] = []; var stored: UsageHistory?; var removals = 0 }
+        final class Sampling { var fire: (() -> Void)?; var interval: TimeInterval = 0; var cancels = 0; var allowed = true }
+        let clock = Clock(), codex = Fetcher(), claude = Fetcher(), store = Store(), sampling = Sampling()
+        let file = UsageHistoryFile(load: { store.stored }, save: { store.saved.append($0); store.stored = $0 },
+                                    remove: { store.removals += 1; store.stored = nil }, flush: {})
+        let m = UsageLimitsModel(clock: { clock.now }, fetchers: [.codex: codex.fetch, .claude: claude.fetch],
+                                 scheduleTimer: { _, _ in {} }, observeWake: { _ in {} }, historyFile: file,
+                                 scheduleSampling: { interval, fire in
+                                     sampling.interval = interval; sampling.fire = fire
+                                     return { sampling.cancels += 1; sampling.fire = nil }
+                                 }, maySample: { sampling.allowed })
+        func weekly(_ provider: String, used: Double, owner: UsageIdentity = .unknown) -> UsageReading {
+            UsageReading(windows: [UsageWindow(id: "\(provider).weekly", label: "Weekly limit", usedPercent: used,
+                                               resetsAt: Date(timeIntervalSince1970: 1_900_400_000), durationMinutes: 10_080)],
+                         checkedAt: .distantPast, owner: UsageOwner(user: owner))
+        }
+        func points(_ provider: String) -> [UsageTrend.Point] { m.history.trends["\(provider).weekly"]?.points ?? [] }
+
+        m.sample()
+        check(codex.requests.isEmpty && !m.hasSamplingTimer, "with trend tracking off nothing is read in the background")
+        m.open(); codex.finish(.success(weekly("codex", used: 10))); claude.finish(.success(weekly("claude", used: 20))); spin()
+        m.close()
+        check(m.history.isEmpty && store.saved.isEmpty, "with trend tracking off a reading is not recorded or written")
+
+        let viewed = clock.now
+        clock.now += 60
+        m.setTrendTracking(true)
+        check(m.hasSamplingTimer && sampling.interval == 300 && codex.requests.count == 2 && claude.requests.count == 2 && m.isSampling,
+              "turning tracking on schedules a five-minute sample and takes one now")
+        check(!m.hasOutstandingWork && !m.state(.codex).inFlight && !m.hasTimer, "a background sample is not a view read")
+        codex.finish(.success(weekly("codex", used: 10, owner: personA))); claude.finish(.success(weekly("claude", used: 20))); spin()
+        check(points("codex") == [UsageTrend.Point(at: clock.now, usedPercent: 10)] && points("claude").count == 1 && !m.isSampling,
+              "a sample is recorded at the moment it was asked for")
+        check(store.stored == m.history, "the recorded history is saved")
+        check(m.state(.codex).reading?.checkedAt == viewed, "a sample leaves the row's own reading alone")
+
+        clock.now += 300; sampling.fire?()
+        check(codex.requests.count == 3, "the timer takes the next sample")
+        sampling.fire?()
+        check(codex.requests.count == 3, "a provider still reading is not asked twice")
+        codex.finish(.success(weekly("codex", used: 12, owner: personA))); claude.finish(.failure(UsageProblem(.timeout, retryAfter: clock.now + 900))); spin()
+        check(points("codex").map(\.usedPercent) == [10, 12] && points("claude").count == 1, "a failed sample adds nothing")
+        clock.now += 300; sampling.fire?()
+        check(codex.requests.count == 4 && claude.requests.count == 3, "a provider that asked for a pause is not sampled during it")
+        codex.finish(.success(weekly("codex", used: 12, owner: personA))); spin()
+
+        sampling.allowed = false; clock.now += 300; sampling.fire?()
+        check(codex.requests.count == 4, "Low Power Mode pauses sampling")
+        sampling.allowed = true
+
+        m.open()
+        let opened = codex.requests.count
+        clock.now += 300; sampling.fire?()
+        check(codex.requests.count == opened, "nothing is sampled while the view is open")
+        codex.finish(.success(weekly("codex", used: 15, owner: personA))); spin()
+        check(points("codex").last?.usedPercent == 15, "the view's own reading joins the trend")
+        m.close()
+
+        clock.now += 300; sampling.fire?()
+        codex.identity(personB); spin()
+        check(points("codex").isEmpty && !points("claude").isEmpty && m.state(.codex).reading == nil,
+              "a confirmed account change starts that provider's trend again and drops its cached row")
+        codex.finish(.success(weekly("codex", used: 3, owner: personB))); spin()
+        check(points("codex").map(\.usedPercent) == [3], "the new account's trend starts from its own reading")
+        clock.now += 300; sampling.fire?()
+        codex.finish(.failure(UsageProblem(.signedOut))); spin()
+        check(points("codex").isEmpty && store.stored == m.history, "signing out forgets that provider's trend, in the file too")
+
+        clock.now += 300; sampling.fire?()
+        let late = codex.requests.count - 1
+        m.setTrendTracking(false)
+        check(!m.hasSamplingTimer && sampling.cancels == 1 && m.history.isEmpty && store.removals == 1 && store.stored == nil,
+              "turning tracking off stops the timer and removes the history and its file")
+        check(codex.requests[late].cancellation.isCancelled, "turning tracking off cancels a sample in flight")
+        codex.finish(.success(weekly("codex", used: 50)), late); spin()
+        check(m.history.isEmpty && store.stored == nil, "a late sample after turning off records nothing")
+
+        store.stored = { var saved = UsageHistory(); saved.record(UsageReading(windows: weekly("claude", used: 44).windows, checkedAt: clock.now - 600, owner: UsageOwner(user: .unknown))); return saved }()
+        m.setTrendTracking(true)
+        check(points("claude").map(\.usedPercent) == [44], "turning tracking on loads the saved history")
+        m.terminate()
+        check(!m.hasSamplingTimer && !m.isSampling, "quit stops sampling")
+    }
+
     // MARK: Panel
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-usage-app-\(UUID())")

@@ -7,8 +7,12 @@ public struct UsageWindow: Equatable, Identifiable {
     public var label: String
     public var usedPercent: Double
     public var resetsAt: Date?
-    public init(id: String, label: String, usedPercent: Double, resetsAt: Date?) {
+    /// The window's length when the provider states it or its kind fixes it; the trend line
+    /// starts its period this long before the reset.
+    public var durationMinutes: Int?
+    public init(id: String, label: String, usedPercent: Double, resetsAt: Date?, durationMinutes: Int? = nil) {
         self.id = id; self.label = label; self.usedPercent = usedPercent; self.resetsAt = resetsAt
+        self.durationMinutes = durationMinutes
     }
     /// One convention everywhere: percent left. The native surfaces floor percent used, so
     /// 0.4 % used reads as 100 % left there and here.

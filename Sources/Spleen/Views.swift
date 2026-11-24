@@ -324,6 +324,11 @@ struct SwitcherView: View {
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             settingsStatus(model.terminalStatus)
                         }
+                        SettingsSection(title: "Usage limits", symbol: "chart.line.downtrend.xyaxis") {
+                            settingsToggle("Track the usage trend", isOn: $model.usageTrendDraft)
+                            Text("Draws how each limit has gone down since its last reset. Checks Codex and Claude Code every five minutes in the background, and keeps only percentages and their times on this Mac. Paused in Low Power Mode.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                         SettingsSection(title: "Codex navigation", symbol: "arrow.triangle.branch") {
                             settingsToggle("Remember visited Codex Desktop sessions", isOn: $model.observeCodexDraft)
                             Text("Records exact foreground local thread routes for 30 days. No messages, screenshots, or API requests. Missing routes remain unknown; activity is not a visit.")

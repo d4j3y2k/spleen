@@ -92,7 +92,8 @@ public enum CodexUsage {
                 let minutes = (raw["windowDurationMins"] as? NSNumber).map(\.intValue)
                 let reset = (raw["resetsAt"] as? NSNumber).flatMap { $0.doubleValue.isFinite && $0.doubleValue > 0 ? Date(timeIntervalSince1970: $0.doubleValue) : nil }
                 return (minutes, UsageWindow(id: "codex.\(limitKey).\(minutes.map(String.init) ?? slot)",
-                                             label: UsageLabels.duration(minutes: minutes), usedPercent: used, resetsAt: reset))
+                                             label: UsageLabels.duration(minutes: minutes), usedPercent: used, resetsAt: reset,
+                                             durationMinutes: minutes.flatMap { $0 > 0 ? $0 : nil }))
             }
             return Bucket(key: limitKey, name: UsageLabels.displayName(bucket["limitName"]), windows: windows)
         }

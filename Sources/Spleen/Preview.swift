@@ -111,6 +111,7 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
                 let states = previewUsageStates(name, now: instant)
                 previewUsage.install(states.codex, for: .codex)
                 previewUsage.install(states.claude, for: .claude)
+                previewUsage.install(name == "usage" ? previewUsageHistory([states.codex, states.claude], now: instant) : UsageHistory())
             }
             let canvasSize = NSSize(width: size.width + 48, height: size.height + 48)
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: canvasSize),
@@ -161,7 +162,8 @@ private func previewUsageStates(_ name: String, now: Date) -> (codex: UsageLimit
     let owner = UsageOwner(user: .unknown)
     let checked = now.addingTimeInterval(-40)
     func window(_ id: String, _ label: String, used: Double, hours: Double?) -> UsageWindow {
-        UsageWindow(id: id, label: label, usedPercent: used, resetsAt: hours.map { now.addingTimeInterval($0 * 3600) })
+        UsageWindow(id: id, label: label, usedPercent: used, resetsAt: hours.map { now.addingTimeInterval($0 * 3600) },
+                    durationMinutes: label.hasPrefix("5-hour") ? 300 : 10_080)
     }
     func reading(_ windows: [UsageWindow]) -> UsageReading { UsageReading(windows: windows, checkedAt: checked, owner: owner) }
     let codexWindows = [window("c5", "5-hour limit", used: 16, hours: 3.5), window("cw", "Weekly limit", used: 42, hours: 70)]
@@ -181,6 +183,24 @@ private func previewUsageStates(_ name: String, now: Date) -> (codex: UsageLimit
     default:
         return (State(reading: reading(codexWindows), requestID: 1), State(reading: reading(claudeWindows), requestID: 1))
     }
+}
+
+/// An invented burn for each previewed window with a reset: slow at first, then busier.
+private func previewUsageHistory(_ states: [UsageLimitsModel.ProviderState], now: Date) -> UsageHistory {
+    var history = UsageHistory()
+    for window in states.compactMap(\.reading).flatMap(\.windows) {
+        guard let reset = window.resetsAt, let minutes = window.durationMinutes, !window.isExpired(at: now) else { continue }
+        let start = reset.addingTimeInterval(-Double(minutes) * 60), steps = 80
+        for step in 1...steps {
+            let fraction = Double(step) / Double(steps)
+            var sample = window
+            sample.usedPercent = (window.usedPercent * pow(fraction, 1.7)).rounded(.down)
+            if step == steps { sample.usedPercent = window.usedPercent }
+            history.record(UsageReading(windows: [sample], checkedAt: start.addingTimeInterval(fraction * now.timeIntervalSince(start) - 40),
+                                        owner: UsageOwner(user: .unknown)))
+        }
+    }
+    return history
 }
 
 private final class NativePreviewBacking: NSView {

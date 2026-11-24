@@ -15,7 +15,7 @@ struct UsageLimitsList: View {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(UsageLimitsModel.providers, id: \.self) { provider in
                     UsageProviderSection(provider: provider, state: usage.state(provider), status: usage.status(provider),
-                                         now: usage.now, openedAt: usage.openedAt, format: format) { openPage(provider) }
+                                         now: usage.now, openedAt: usage.openedAt, format: format, history: usage.history) { openPage(provider) }
                 }
             }
             .padding(10).padding(.bottom, 6)
@@ -58,6 +58,7 @@ struct UsageProviderSection: View {
     let now: Date
     let openedAt: Date?
     let format: UsageTimeFormat
+    var history = UsageHistory()
     let openPage: () -> Void
 
     private var hue: Color { provider == .claude ? SpleenStyle.claude : SpleenStyle.accent }
@@ -83,7 +84,8 @@ struct UsageProviderSection: View {
             if let reading = state.reading {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(reading.windows) { window in
-                        UsageWindowRow(provider: provider, window: window, hue: hue, now: now, format: format)
+                        UsageWindowRow(provider: provider, window: window, hue: hue, now: now, format: format,
+                                       trend: history.trend(for: window))
                     }
                 }
                 .onAppear { markFresh(reading) }
@@ -111,6 +113,7 @@ struct UsageWindowRow: View {
     let hue: Color
     let now: Date
     let format: UsageTimeFormat
+    var trend: UsageTrend?
 
     var body: some View {
         let expired = window.isExpired(at: now)
@@ -122,6 +125,9 @@ struct UsageWindowRow: View {
                     .font(.system(size: expired ? 12 : 13, weight: expired ? .regular : .semibold)).monospacedDigit()
             }
             UsageMeter(fraction: Double(window.percentLeft) / 100, tint: expired ? Color.secondary : hue)
+            if !expired, let trend, let plot = UsageTrendPlot(trend: trend, now: now) {
+                UsageTrendChart(plot: plot, tint: hue, now: now, format: format)
+            }
             HStack(alignment: .firstTextBaseline) {
                 Text(UsageText.reset(window, now: now, format: format))
                 Spacer(minLength: 8)
@@ -150,6 +156,61 @@ struct UsageMeter: View {
             }
         }
         .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The share left since the period began, as a quiet line under the meter. The dashed line
+/// is an even pace from all of it at the start to none at the reset; above it is slower.
+struct UsageTrendChart: View {
+    let plot: UsageTrendPlot
+    let tint: Color
+    let now: Date
+    let format: UsageTimeFormat
+
+    private static let inset: CGFloat = 3
+    private func point(_ spot: UsageTrendPlot.Spot, in size: CGSize) -> CGPoint {
+        CGPoint(x: spot.x * size.width,
+                y: Self.inset + (1 - spot.y) * (size.height - Self.inset * 2))
+    }
+    private var caption: String {
+        "Share left since \(format.reset(plot.start, now: now))" + (plot.hasPace ? " · the dashed line is an even pace to the reset" : "")
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let spots = plot.line.map { point($0, in: size) }
+            let floor = size.height - Self.inset
+            ZStack {
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: floor)); path.addLine(to: CGPoint(x: size.width, y: floor))
+                }
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                if plot.hasPace {
+                    Path { path in
+                        path.move(to: point(.init(x: 0, y: 1), in: size)); path.addLine(to: point(.init(x: 1, y: 0), in: size))
+                    }
+                    .stroke(Color.primary.opacity(0.22), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 4]))
+                }
+                if let first = spots.first, let last = spots.last {
+                    Path { path in
+                        path.move(to: CGPoint(x: first.x, y: floor))
+                        for spot in spots { path.addLine(to: spot) }
+                        path.addLine(to: CGPoint(x: last.x, y: floor)); path.closeSubpath()
+                    }
+                    .fill(LinearGradient(colors: [tint.opacity(0.2), tint.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    Path { path in
+                        path.move(to: first)
+                        for spot in spots.dropFirst() { path.addLine(to: spot) }
+                    }
+                    .stroke(tint.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    Circle().fill(tint).frame(width: 5, height: 5).position(last)
+                }
+            }
+        }
+        .frame(height: 44)
+        .help(caption)
         .accessibilityHidden(true)
     }
 }

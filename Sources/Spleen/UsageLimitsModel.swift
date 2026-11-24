@@ -5,8 +5,10 @@ typealias UsageFetch = (UsageFetchRequest) -> Void
 
 /// Codex and Claude subscription limits for the Usage Limits view. Main thread only.
 ///
-/// Nothing runs while the view is closed: no timer, no wake observer, no helper. Each opening
-/// refreshes both providers independently; readings stay in memory only.
+/// Unless trend tracking is on, nothing runs while the view is closed: no timer, no wake
+/// observer, no helper. Each opening refreshes both providers independently, and readings stay
+/// in memory only. Trend tracking is opt-in: it adds one quiet read per provider every five
+/// minutes while the view is closed, and keeps percentages and their times in one private file.
 final class UsageLimitsModel: ObservableObject {
     struct ProviderState: Equatable {
         var reading: UsageReading?
@@ -43,6 +45,12 @@ final class UsageLimitsModel: ObservableObject {
     private(set) var openedAt: Date?
     /// Spoken when a provider's answer arrives; set by the panel only while VoiceOver is on.
     var announce: ((String) -> Void)?
+    /// Percent used over each window's current period. Empty unless trend tracking is on.
+    @Published private(set) var history = UsageHistory()
+    private(set) var tracksTrend = false
+    private(set) var sampleCounts: [ContextProvider: Int] = [.codex: 0, .claude: 0]
+    /// About 0.6 s of CPU for both providers per sample, so roughly 0.2 % of one core.
+    static let sampleInterval: TimeInterval = 300
 
     private let clock: () -> Date
     private let fetchers: [ContextProvider: UsageFetch]
@@ -52,14 +60,27 @@ final class UsageLimitsModel: ObservableObject {
     private var cancelTimer: (() -> Void)?
     private var cancelWake: (() -> Void)?
     private var cancellations: [ContextProvider: HelperCancellation] = [:]
+    private let historyFile: UsageHistoryFile?
+    private let scheduleSampling: (TimeInterval, @escaping () -> Void) -> () -> Void
+    private let maySample: () -> Bool
+    private var cancelSampling: (() -> Void)?
+    private var sampleTokens: [ContextProvider: HelperCancellation] = [:]
+    private var sampleRetryAfter: [ContextProvider: Date] = [:]
+    private var sampleGeneration = 0
+    /// Whose readings the trend holds, in memory only, so a confirmed account change starts it again.
+    private var trendOwners: [ContextProvider: UsageOwner] = [:]
 
     init(clock: @escaping () -> Date = Date.init,
          fetchers: [ContextProvider: UsageFetch],
          scheduleTimer: @escaping (Date, @escaping () -> Void) -> () -> Void = UsageLimitsModel.mainTimer,
          observeWake: @escaping (@escaping () -> Void) -> () -> Void = UsageLimitsModel.wakeObserver,
-         shutdown: @escaping () -> Void = {}) {
+         shutdown: @escaping () -> Void = {},
+         historyFile: UsageHistoryFile? = nil,
+         scheduleSampling: @escaping (TimeInterval, @escaping () -> Void) -> () -> Void = UsageLimitsModel.repeatingTimer,
+         maySample: @escaping () -> Bool = { !ProcessInfo.processInfo.isLowPowerModeEnabled }) {
         self.clock = clock; self.fetchers = fetchers; self.scheduleTimer = scheduleTimer
         self.observeWake = observeWake; self.shutdown = shutdown
+        self.historyFile = historyFile; self.scheduleSampling = scheduleSampling; self.maySample = maySample
         now = clock()
     }
 
@@ -74,6 +95,8 @@ final class UsageLimitsModel: ObservableObject {
     var hasTimer: Bool { cancelTimer != nil }
     var hasWakeObserver: Bool { cancelWake != nil }
     var hasOutstandingWork: Bool { !cancellations.isEmpty }
+    var isSampling: Bool { !sampleTokens.isEmpty }
+    var hasSamplingTimer: Bool { cancelSampling != nil }
     var canRefresh: Bool { isOpen && Self.providers.contains { refreshable($0) } }
 
     func status(_ provider: ContextProvider) -> Status {
@@ -126,6 +149,7 @@ final class UsageLimitsModel: ObservableObject {
     func install(_ value: ProviderState, for provider: ContextProvider) {
         if provider == .codex { codex = value } else { claude = value }
     }
+    func install(_ value: UsageHistory) { history = value }
 
     /// Only the current request of the current opening is applied; late answers are ignored.
     private func receive(_ event: UsageEvent, from provider: ContextProvider, opening: Int, request: Int) {
@@ -154,6 +178,10 @@ final class UsageLimitsModel: ObservableObject {
             }
             now = clock()
             armTimer()
+            switch result {
+            case .success: if let reading = state(provider).reading { record(reading, from: provider) }
+            case .failure(let problem): if problem.failure == .signedOut { forgetTrend(provider) }
+            }
             if case .success = result { announce?("\(provider.displayName) usage limits updated") }
             else { announce?("\(provider.displayName) usage limits unavailable") }
         }
@@ -163,6 +191,10 @@ final class UsageLimitsModel: ObservableObject {
     /// read then fails. `unknown` changes nothing.
     private func apply(_ observed: UsageIdentity, to provider: ContextProvider) {
         guard observed != .unknown else { return }
+        if observed == .signedOut
+            || trendOwners[provider].map({ UsageIdentityRules.confirmsChange(cached: $0.user, observed: observed) }) ?? false {
+            forgetTrend(provider)
+        }
         update(provider) { value in
             if let reading = value.reading, UsageIdentityRules.confirmsChange(cached: reading.owner.user, observed: observed) {
                 value.reading = nil
@@ -183,8 +215,105 @@ final class UsageLimitsModel: ObservableObject {
         cancelWake?(); cancelWake = nil
     }
 
-    /// Quit: cancel and reap every helper within the helpers' own bound.
-    func terminate() { close(); shutdown() }
+    /// Quit: cancel and reap every helper within the helpers' own bound, and finish saving.
+    func terminate() { close(); stopSampling(); shutdown(); historyFile?.flush() }
+
+    // MARK: Trend
+
+    /// On: the saved history is loaded, every successful reading is recorded, and a quiet read
+    /// runs now and then every five minutes. Off: no background read, and the history and its
+    /// file are removed.
+    func setTrendTracking(_ on: Bool) {
+        guard on != tracksTrend else { return }
+        tracksTrend = on
+        if on {
+            var saved = historyFile?.load() ?? UsageHistory()
+            saved.prune(at: clock())
+            history = saved
+            cancelSampling = scheduleSampling(Self.sampleInterval) { [weak self] in self?.sample() }
+            sample()
+        } else {
+            stopSampling()
+            trendOwners = [:]; sampleRetryAfter = [:]
+            history = UsageHistory()
+            historyFile?.remove()
+        }
+    }
+
+    private func stopSampling() {
+        cancelSampling?(); cancelSampling = nil
+        for token in sampleTokens.values { token.cancel() }
+        sampleTokens = [:]; sampleGeneration += 1
+    }
+
+    /// One quiet read per provider for the trend. Skipped while the view is open (its own
+    /// reads are recorded), in Low Power Mode, and for a provider still reading or backing off.
+    /// It changes no row: only the history, or a cache whose account is confirmed changed.
+    func sample() {
+        guard tracksTrend, !isOpen, maySample() else { return }
+        let started = clock(), generation = sampleGeneration
+        for provider in Self.providers {
+            let backoff = [sampleRetryAfter[provider], state(provider).retryAfter].compactMap { $0 }.max()
+            guard sampleTokens[provider] == nil, !(backoff.map { started < $0 } ?? false), let fetch = fetchers[provider] else { continue }
+            let token = HelperCancellation()
+            sampleTokens[provider] = token
+            sampleCounts[provider, default: 0] += 1
+            fetch(UsageFetchRequest(cancellation: token, cachedOwner: trendOwners[provider] ?? state(provider).reading?.owner) { [weak self] event in
+                DispatchQueue.main.async {
+                    self?.receiveSample(event, from: provider, started: started, token: token, generation: generation)
+                }
+            })
+        }
+    }
+
+    private func receiveSample(_ event: UsageEvent, from provider: ContextProvider, started: Date, token: HelperCancellation, generation: Int) {
+        guard tracksTrend, generation == sampleGeneration, sampleTokens[provider] === token else { return }
+        switch event {
+        case .identity(let observed):
+            apply(observed, to: provider)
+        case .finished(let result):
+            sampleTokens[provider] = nil
+            switch result {
+            case .success(var reading):
+                reading.checkedAt = started
+                sampleRetryAfter[provider] = nil
+                record(reading, from: provider)
+            case .failure(let problem):
+                sampleRetryAfter[provider] = problem.retryAfter
+                if problem.failure == .signedOut { apply(.signedOut, to: provider) }
+            }
+        }
+    }
+
+    /// Adds a reading to the trend. A confirmed change of person or of snapshot owner starts
+    /// that provider's lines again first; an unknown owner changes nothing.
+    private func record(_ reading: UsageReading, from provider: ContextProvider) {
+        guard tracksTrend else { return }
+        var next = history
+        var owner = reading.owner
+        if let known = trendOwners[provider] {
+            if UsageIdentityRules.confirmsChange(cached: known.user, observed: owner.user)
+                || UsageIdentityRules.snapshotChanged(cached: known.snapshot, observed: owner.snapshot) {
+                next.remove(prefix: provider.rawValue + ".")
+            } else {
+                if owner.user == .unknown { owner.user = known.user }
+                if owner.snapshot == nil { owner.snapshot = known.snapshot }
+            }
+        }
+        trendOwners[provider] = owner
+        next.record(reading)
+        guard next != history else { return }
+        history = next
+        historyFile?.save(next)
+    }
+
+    private func forgetTrend(_ provider: ContextProvider) {
+        trendOwners[provider] = nil
+        var next = history
+        guard next.remove(prefix: provider.rawValue + ".") else { return }
+        history = next
+        historyFile?.save(next)
+    }
 
     /// The countdown, expiry and wake update the display only; they never start a read.
     /// One one-shot timer, armed only while open, targets the next instant at which any
@@ -214,6 +343,14 @@ final class UsageLimitsModel: ObservableObject {
         return { timer.invalidate() }
     }
 
+    /// A generous tolerance lets the system fold the wake into others.
+    static func repeatingTimer(_ interval: TimeInterval, _ fire: @escaping () -> Void) -> () -> Void {
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in fire() }
+        timer.tolerance = interval / 10
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
+    }
+
     static func wakeObserver(_ handler: @escaping () -> Void) -> () -> Void {
         let center = NSWorkspace.shared.notificationCenter
         let token = center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in handler() }
@@ -223,7 +360,7 @@ final class UsageLimitsModel: ObservableObject {
 
 extension UsageLimitsModel {
     /// The installed clients, each on its own lane: one live helper and one pending launch per provider.
-    static func live() -> UsageLimitsModel {
+    static func live(historyURL: URL? = nil) -> UsageLimitsModel {
         let codexLane = HelperLane(label: "spleen.usage.codex"), claudeLane = HelperLane(label: "spleen.usage.claude")
         let gate = ClaudeUsageGate()
         let environment = ProcessInfo.processInfo.environment
@@ -241,7 +378,7 @@ extension UsageLimitsModel {
         ], shutdown: {
             codexLane.cancelAll(); claudeLane.cancelAll()
             codexLane.waitUntilIdle(timeout: 1.5); claudeLane.waitUntilIdle(timeout: 1.5)
-        })
+        }, historyFile: historyURL.map(UsageHistoryFile.at))
     }
 
     /// An empty directory Spleen owns under its caches folder, so no client reads project files.
@@ -254,5 +391,22 @@ extension UsageLimitsModel {
             return directory
         }
         return FileManager.default.temporaryDirectory
+    }
+}
+
+/// Where the trend history is kept. Every call runs in order on one background queue; only
+/// `load` and `flush` wait for it.
+struct UsageHistoryFile {
+    var load: () -> UsageHistory?
+    var save: (UsageHistory) -> Void
+    var remove: () -> Void
+    var flush: () -> Void
+
+    static func at(_ url: URL) -> UsageHistoryFile {
+        let queue = DispatchQueue(label: "spleen.usage.history", qos: .utility)
+        return UsageHistoryFile(load: { queue.sync { UsageHistory.load(from: url) } },
+                                save: { history in queue.async { try? history.save(to: url) } },
+                                remove: { queue.async { try? FileManager.default.removeItem(at: url) } },
+                                flush: { queue.sync {} })
     }
 }

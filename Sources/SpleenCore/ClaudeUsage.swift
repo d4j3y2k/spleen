@@ -111,8 +111,10 @@ public enum ClaudeUsage {
             let key = "\(kind).\(normal ?? "all")"
             guard !seen.contains(key), let percent = UsageWindow.percent(used) else { return }
             seen.insert(key)
+            // The kinds fix their lengths: a session is five hours, every weekly kind seven days.
             found.append((order, normal ?? "", UsageWindow(id: "claude.\(key)", label: label, usedPercent: percent,
-                                                         resetsAt: UsageTimestamp.parse(reset))))
+                                                         resetsAt: UsageTimestamp.parse(reset),
+                                                         durationMinutes: kind == "session" ? 300 : 10_080)))
         }
         func named(_ field: String, _ kind: String, scope: String?, label: String, order: Int) {
             guard let window = limits[field] as? [String: Any] else { return }
