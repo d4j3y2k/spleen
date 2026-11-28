@@ -127,22 +127,50 @@ public final class HelperChannel {
             if ended { throw HelperError.unavailable }
             try checkBounds()
             if let soft, monotonicSeconds() >= soft { return nil }
-            var descriptor = pollfd(fd: output, events: Int16(POLLIN), revents: 0)
-            let ready = poll(&descriptor, 1, remainingTick)
-            if ready < 0 { if errno == EINTR { continue }; throw HelperError.unavailable }
-            if ready == 0 {
-                // A descendant can keep stdout open after the leader died; the leader is what answers.
-                if leaderExited() { throw HelperError.unavailable }
-                continue
-            }
-            var chunk = [UInt8](repeating: 0, count: 65_536)
-            let count = chunk.withUnsafeMutableBufferPointer { Darwin.read(output, $0.baseAddress, $0.count) }
-            if count < 0 { if errno == EINTR || errno == EAGAIN { continue }; throw HelperError.unavailable }
-            if count == 0 { ended = true; continue } // Hangup: buffered data was drained above.
-            received += count
-            guard received <= limits.maximumOutputBytes else { throw HelperError.tooLarge }
-            buffer.append(contentsOf: chunk[..<count])
+            try readChunk()
         }
+    }
+
+    /// A command-line report is complete only after stdout closes and the command exits
+    /// successfully. Keep its leader waitable for the usual process-group teardown.
+    func readReport() throws -> Data {
+        close(input)
+        input = -1
+        while !ended {
+            try checkBounds()
+            try readChunk()
+        }
+        while true {
+            try checkBounds()
+            var info = siginfo_t()
+            if waitid(P_PID, id_t(pid), &info, WEXITED | WNOHANG | WNOWAIT) < 0 {
+                if errno == EINTR { continue }
+                throw HelperError.unavailable
+            }
+            if info.si_pid == pid {
+                guard info.si_code == CLD_EXITED, info.si_status == 0 else { throw HelperError.unavailable }
+                return Data(buffer)
+            }
+            usleep(5_000)
+        }
+    }
+
+    private func readChunk() throws {
+        var descriptor = pollfd(fd: output, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&descriptor, 1, remainingTick)
+        if ready < 0 { if errno == EINTR { return }; throw HelperError.unavailable }
+        if ready == 0 {
+            // A descendant can keep stdout open after the leader died; the leader is what answers.
+            if leaderExited() { throw HelperError.unavailable }
+            return
+        }
+        var chunk = [UInt8](repeating: 0, count: 65_536)
+        let count = chunk.withUnsafeMutableBufferPointer { Darwin.read(output, $0.baseAddress, $0.count) }
+        if count < 0 { if errno == EINTR || errno == EAGAIN { return }; throw HelperError.unavailable }
+        if count == 0 { ended = true; return } // Hangup: buffered data was drained above.
+        received += count
+        guard received <= limits.maximumOutputBytes else { throw HelperError.tooLarge }
+        buffer.append(contentsOf: chunk[..<count])
     }
 }
 

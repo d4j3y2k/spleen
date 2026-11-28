@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import SpleenCore
 
 /// Usage Limits inside the built app: injected clock, fetchers, timer and wake; keyboard
@@ -50,13 +51,13 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
         }
         func identity(_ identity: UsageIdentity, _ index: Int? = nil) { requests[index ?? requests.count - 1].emit(.identity(identity)) }
     }
-    struct Rig { let model: UsageLimitsModel; let clock: Clock; let timers: Timers; let wake: Wake; let codex: Fetcher; let claude: Fetcher; var shutdowns: () -> Int }
+    struct Rig { let model: UsageLimitsModel; let clock: Clock; let timers: Timers; let wake: Wake; let codex: Fetcher; let claude: Fetcher; let agy: Fetcher; var shutdowns: () -> Int }
     func rig() -> Rig {
-        let clock = Clock(), timers = Timers(), wake = Wake(), codex = Fetcher(), claude = Fetcher()
+        let clock = Clock(), timers = Timers(), wake = Wake(), codex = Fetcher(), claude = Fetcher(), agy = Fetcher()
         var shutdowns = 0
-        let model = UsageLimitsModel(clock: { clock.now }, fetchers: [.codex: codex.fetch, .claude: claude.fetch],
+        let model = UsageLimitsModel(clock: { clock.now }, fetchers: [.codex: codex.fetch, .claude: claude.fetch, .antigravity: agy.fetch],
                                      scheduleTimer: timers.schedule, observeWake: wake.observe, shutdown: { shutdowns += 1 })
-        return Rig(model: model, clock: clock, timers: timers, wake: wake, codex: codex, claude: claude, shutdowns: { shutdowns })
+        return Rig(model: model, clock: clock, timers: timers, wake: wake, codex: codex, claude: claude, agy: agy, shutdowns: { shutdowns })
     }
     let personA = UsageIdentity.known(UsagePerson(key: "fixture-a")), personB = UsageIdentity.known(UsagePerson(key: "fixture-b"))
     func reading(_ owner: UsageIdentity = .unknown, resets: [TimeInterval?] = [3600], at instant: Date, used: Double = 30) -> UsageReading {
@@ -70,11 +71,14 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
     do {
         let r = rig(), m = r.model
         m.open()
-        check(m.status(.codex) == .loading && m.status(.claude) == .loading, "first use shows loading for both providers synchronously")
-        check(r.codex.requests.count == 1 && r.claude.requests.count == 1, "an opening refreshes both providers")
-        r.codex.finish(.success(reading(at: r.clock.now))); spin()
-        check(m.status(.codex) == .checked(r.clock.now) && m.status(.claude) == .loading,
+        check(m.providers.allSatisfy { m.status($0) == .loading }, "first use shows loading for all providers synchronously")
+        check(r.codex.requests.count == 1 && r.claude.requests.count == 1 && r.agy.requests.count == 1, "an opening refreshes all three providers")
+        r.codex.finish(.success(reading(at: r.clock.now)))
+        check(wait { m.status(.codex) == .checked(r.clock.now) } && m.status(.claude) == .loading,
               "Codex is readable while Claude is still loading")
+        r.agy.finish(.success(reading(at: r.clock.now, used: 12)))
+        check(wait { m.state(.antigravity).reading?.windows.first?.percentLeft == 88 } && m.status(.claude) == .loading,
+              "Antigravity has its own reading while Claude is still loading")
         for failure in [UsageFailure.timeout, .signedOut, .missingClient, .incompatible, .offlineOrEmpty] {
             m.close(); m.open()
             r.claude.finish(.failure(UsageProblem(failure))); spin()
@@ -274,6 +278,21 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
         check(!m.hasSamplingTimer && !m.isSampling, "quit stops sampling")
     }
 
+    // Render the crowded preview at the actual column width with every trend enabled.
+    do {
+        let now = Date(), states = previewUsageStates("usage-many-trends", now: now)
+        let history = previewUsageHistory(Array(states.values), now: now)
+        // Management chrome, list padding and two column gaps leave 996 x 458 points for the rows.
+        let width = (SpleenStyle.usageSize.width - 84) / 3
+        let height = SpleenStyle.usageSize.height - 146
+        for (provider, state) in states {
+            let view = UsageProviderSection(provider: provider, state: state, status: .checked(now), now: now,
+                                            openedAt: nil, format: UsageTimeFormat(), history: history, compact: true) {}
+            let size = NSHostingView(rootView: view.frame(width: width).fixedSize()).fittingSize
+            check(size.height > 0 && size.height <= height, "\(provider.displayName)'s quotas and trend graphs fit without scrolling")
+        }
+    }
+
     // MARK: Panel
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-usage-app-\(UUID())")
@@ -319,7 +338,8 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
     func finishReads() {
         if r.model.state(.codex).inFlight { r.codex.finish(.success(reading(personA, at: r.clock.now))) }
         if r.model.state(.claude).inFlight { r.claude.finish(.success(reading(personA, at: r.clock.now))) }
-        _ = wait(1) { !r.model.state(.codex).inFlight && !r.model.state(.claude).inFlight }
+        if r.model.state(.antigravity).inFlight { r.agy.finish(.success(reading(at: r.clock.now))) }
+        _ = wait(1) { r.model.providers.allSatisfy { !r.model.state($0).inFlight } }
     }
 
     controller.present(orderFront: false, assessOnOpen: false)
@@ -376,7 +396,7 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
     check(r.model.hasTimer && r.model.hasWakeObserver, "the countdown runs while Usage is on screen")
     let before = r.model.fetchCounts
     post(commandR())
-    check(r.model.fetchCounts[.codex] == before[.codex]! + 1 && r.model.fetchCounts[.claude] == before[.claude]! + 1, "⌘R refreshes both providers")
+    check(r.model.providers.allSatisfy { r.model.fetchCounts[$0] == before[$0, default: 0] + 1 }, "⌘R refreshes all three providers")
     post(commandR())
     check(r.model.fetchCounts[.codex] == before[.codex]! + 1, "⌘R while in flight is coalesced")
     check(controller.handleKeyDown(space()) != nil && controller.handleKeyDown(key(36, "\r")) != nil,
@@ -531,7 +551,7 @@ func runUsageLimitsTests() -> (passed: Int, failures: [String]) {
 func runUsageTimingTrials(trials: Int = 20, completion: @escaping (Bool) -> Void) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("spleen-usage-timing-\(UUID())")
     var pending: [UsageFetchRequest] = []
-    let usage = UsageLimitsModel(fetchers: [.codex: { pending.append($0) }, .claude: { pending.append($0) }],
+    let usage = UsageLimitsModel(fetchers: [.codex: { pending.append($0) }, .claude: { pending.append($0) }, .antigravity: { pending.append($0) }],
                                  scheduleTimer: { _, _ in {} }, observeWake: { _ in {} })
     let model = AppModel(repository: StateRepository(url: directory.appendingPathComponent("state.json")),
                          catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, usage: usage)

@@ -97,7 +97,7 @@ final class AppModel: ObservableObject {
     /// Set when a direct Usage opening superseded an invocation, so that invocation's queued
     /// conversation work is skipped.
     private var directUsageGeneration = 0
-    var openUsagePage: ((ContextProvider) -> Void)?
+    var openUsagePage: ((UsageProvider) -> Void)?
     @Published private(set) var compassItems: [Destination] = []
     @Published private(set) var recentSessions: [RecentSession] = []
     @Published private(set) var browsingRecents = false

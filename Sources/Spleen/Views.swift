@@ -60,7 +60,8 @@ struct SwitcherView: View {
                 else { settings }
             }
         }
-        .frame(width: SpleenStyle.managementSize.width, height: SpleenStyle.managementSize.height)
+        .frame(width: model.mode == .usage ? nil : SpleenStyle.managementSize.width,
+               height: model.mode == .usage ? nil : SpleenStyle.managementSize.height)
         .tint(SpleenStyle.accent)
     }
 
@@ -326,7 +327,7 @@ struct SwitcherView: View {
                         }
                         SettingsSection(title: "Usage limits", symbol: "chart.line.downtrend.xyaxis") {
                             settingsToggle("Track the usage trend", isOn: $model.usageTrendDraft)
-                            Text("Draws how each limit has gone down since its last reset. Checks Codex and Claude Code every five minutes in the background, and keeps only percentages and their times on this Mac. Paused in Low Power Mode.")
+                            Text("Draws how each limit has gone down since its last reset. Checks Codex, Claude Code and Antigravity every five minutes in the background, and keeps only percentages and their times on this Mac. Paused in Low Power Mode.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         SettingsSection(title: "Codex navigation", symbol: "arrow.triangle.branch") {

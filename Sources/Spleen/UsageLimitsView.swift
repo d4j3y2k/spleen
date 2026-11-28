@@ -2,46 +2,37 @@ import SwiftUI
 import AppKit
 import SpleenCore
 
-/// The scrolling body of the Usage Limits view. It observes the usage model directly, so each
-/// provider's arrival re-renders only these rows.
+/// Each provider has its own column. Choose the roomiest rows that all fit at once.
 struct UsageLimitsList: View {
     @ObservedObject var usage: UsageLimitsModel
-    var openPage: (ContextProvider) -> Void
+    var openPage: (UsageProvider) -> Void
     var format = UsageTimeFormat()
-    @Environment(\.usageScrollAnchorBottom) private var anchorBottom
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(UsageLimitsModel.providers, id: \.self) { provider in
-                    UsageProviderSection(provider: provider, state: usage.state(provider), status: usage.status(provider),
-                                         now: usage.now, openedAt: usage.openedAt, format: format, history: usage.history) { openPage(provider) }
+        HStack(alignment: .top, spacing: 10) {
+            ForEach(usage.providers, id: \.self) { provider in
+                ViewThatFits(in: .vertical) {
+                    section(provider, compact: false)
+                    section(provider, compact: true)
+                    // Very small displays and unusually large accounts can still reach every row.
+                    ScrollView { section(provider, compact: true) }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .padding(10).padding(.bottom, 6)
-            .onAppear { UsageDisplayMarker.mark("usage.content.displayed") }
-            .onChange(of: usage.openingID) { _ in UsageDisplayMarker.mark("usage.content.displayed") }
         }
-        .modifier(UsageScrollAnchor(bottom: anchorBottom))
+        .padding(10)
+        .onAppear { UsageDisplayMarker.mark("usage.content.displayed") }
+        .onChange(of: usage.openingID) { _ in UsageDisplayMarker.mark("usage.content.displayed") }
+    }
+
+    private func section(_ provider: UsageProvider, compact: Bool) -> some View {
+        UsageProviderSection(provider: provider, state: usage.state(provider), status: usage.status(provider),
+                             now: usage.now, openedAt: usage.openedAt, format: format,
+                             history: usage.history, compact: compact) { openPage(provider) }
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// Previews render the end of a long list, to show the last recovery button is reachable.
-private struct UsageScrollAnchorKey: EnvironmentKey { static let defaultValue = false }
-extension EnvironmentValues {
-    var usageScrollAnchorBottom: Bool {
-        get { self[UsageScrollAnchorKey.self] }
-        set { self[UsageScrollAnchorKey.self] = newValue }
-    }
-}
-private struct UsageScrollAnchor: ViewModifier {
-    let bottom: Bool
-    func body(content: Content) -> some View {
-        if #available(macOS 14, *), bottom { content.defaultScrollAnchor(.bottom) } else { content }
-    }
-}
-
-/// Refresh both providers; coalesced, so it is disabled while both are already checking.
 struct UsageRefreshButton: View {
     @ObservedObject var usage: UsageLimitsModel
     var body: some View {
@@ -52,25 +43,44 @@ struct UsageRefreshButton: View {
 }
 
 struct UsageProviderSection: View {
-    let provider: ContextProvider
+    let provider: UsageProvider
     let state: UsageLimitsModel.ProviderState
     let status: UsageLimitsModel.Status
     let now: Date
     let openedAt: Date?
     let format: UsageTimeFormat
     var history = UsageHistory()
+    let compact: Bool
     let openPage: () -> Void
 
-    private var hue: Color { provider == .claude ? SpleenStyle.claude : SpleenStyle.accent }
+    private var hue: Color {
+        switch provider {
+        case .codex: return SpleenStyle.accent
+        case .claude: return SpleenStyle.claude
+        case .antigravity: return .indigo
+        }
+    }
+    @ViewBuilder private var mark: some View {
+        switch provider {
+        case .codex: ProviderMark(provider: .codex, size: 26)
+        case .claude: ProviderMark(provider: .claude, size: 26)
+        case .antigravity:
+            Text("agy")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(hue)
+                .frame(width: 26, height: 26)
+                .background(hue.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+        }
+    }
     /// A row read during this opening is a fresh row.
     private func markFresh(_ reading: UsageReading) {
         if let openedAt, reading.checkedAt >= openedAt { UsageDisplayMarker.mark("usage.\(provider.rawValue).row") }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: compact ? 8 : 14) {
             HStack(spacing: 10) {
-                ProviderMark(provider: provider, size: 26)
+                mark
                 VStack(alignment: .leading, spacing: 2) {
                     Text(provider.displayName).font(.system(size: 13, weight: .semibold))
                         .accessibilityAddTraits(.isHeader)
@@ -80,53 +90,53 @@ struct UsageProviderSection: View {
                 }
                 Spacer(minLength: 8)
                 if state.inFlight { ProgressView().controlSize(.small).accessibilityLabel("Checking \(provider.displayName)") }
+                Button(action: openPage) { Image(systemName: "arrow.up.right.square") }
+                    .buttonStyle(.borderless)
+                    .help("Open \(provider.detailsLabel)")
+                    .accessibilityLabel("Open \(provider.detailsLabel)")
             }
             if let reading = state.reading {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: compact ? 7 : 14) {
                     ForEach(reading.windows) { window in
                         UsageWindowRow(provider: provider, window: window, hue: hue, now: now, format: format,
-                                       trend: history.trend(for: window))
+                                       trend: history.trend(for: window), compact: compact)
                     }
                 }
                 .onAppear { markFresh(reading) }
                 .onChange(of: reading.checkedAt) { _ in markFresh(reading) }
             }
-            HStack {
-                Spacer()
-                Button(action: openPage) {
-                    Label("Open usage page", systemImage: "arrow.up.right.square")
-                }
-                .controlSize(.small)
-                .help(UsageLimitsModel.usagePages[provider]?.absoluteString ?? "")
-                .accessibilityLabel("Open \(provider.displayName) usage page")
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(12)
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
 struct UsageWindowRow: View {
-    let provider: ContextProvider
+    let provider: UsageProvider
     let window: UsageWindow
     let hue: Color
     let now: Date
     let format: UsageTimeFormat
     var trend: UsageTrend?
+    let compact: Bool
 
     var body: some View {
         let expired = window.isExpired(at: now)
-        VStack(alignment: .leading, spacing: 6) {
+        let plot = expired ? nil : trend.flatMap { UsageTrendPlot(trend: $0, now: now) }
+        VStack(alignment: .leading, spacing: compact ? 2 : 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(window.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Spacer(minLength: 8)
+                Text(window.label).font(.system(size: 13, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if compact, let plot {
+                    UsageTrendChart(plot: plot, tint: hue, now: now, format: format).frame(width: 44, height: 14)
+                }
                 Text(expired ? "was \(window.percentLeft)% left" : "\(window.percentLeft)% left")
-                    .font(.system(size: expired ? 12 : 13, weight: expired ? .regular : .semibold)).monospacedDigit()
+                    .font(.system(size: expired ? 12 : 13, weight: expired ? .regular : .semibold)).monospacedDigit().fixedSize()
             }
             UsageMeter(fraction: Double(window.percentLeft) / 100, tint: expired ? Color.secondary : hue)
-            if !expired, let trend, let plot = UsageTrendPlot(trend: trend, now: now) {
-                UsageTrendChart(plot: plot, tint: hue, now: now, format: format)
+            if !compact, let plot {
+                UsageTrendChart(plot: plot, tint: hue, now: now, format: format).frame(height: 32)
             }
             HStack(alignment: .firstTextBaseline) {
                 Text(UsageText.reset(window, now: now, format: format))
@@ -209,27 +219,26 @@ struct UsageTrendChart: View {
                 }
             }
         }
-        .frame(height: 44)
         .help(caption)
         .accessibilityHidden(true)
     }
 }
 
 enum UsageText {
-    static func reason(_ failure: UsageFailure, provider: ContextProvider) -> String {
+    static func reason(_ failure: UsageFailure, provider: UsageProvider) -> String {
         switch failure {
-        case .missingClient: return provider == .codex ? "Codex app not found" : "Claude Code not found"
-        case .signedOut: return provider == .codex ? "Signed out of Codex" : "Signed out of Claude Code"
+        case .missingClient: return provider == .codex ? "Codex app not found" : "\(provider.clientName) not found"
+        case .signedOut: return "Signed out of \(provider.clientName)"
         case .noSubscriptionLimits: return "No subscription limits for this sign-in"
         case .offlineOrEmpty: return "No limit data returned · check your connection"
         case .timeout: return "Timed out"
-        case .incompatible: return provider == .claude ? "Update Claude Code to show limits" : "This Codex version isn’t supported"
+        case .incompatible: return provider == .codex ? "This Codex version isn’t supported" : "Update \(provider.clientName) to show limits"
         case .accountChanged: return "Account changed · refresh to check"
         case .cancelled: return "Stopped"
         }
     }
 
-    static func status(_ status: UsageLimitsModel.Status, provider: ContextProvider, retryAfter: Date?, now: Date,
+    static func status(_ status: UsageLimitsModel.Status, provider: UsageProvider, retryAfter: Date?, now: Date,
                        format: UsageTimeFormat) -> String {
         var text: String
         switch status {
@@ -257,7 +266,7 @@ enum UsageText {
     }
 
     /// "Codex, weekly limit, 84 percent left, resets Tuesday, November 24 at 2:59 PM, in 2 days 4 hours"
-    static func spoken(_ window: UsageWindow, provider: ContextProvider, now: Date, format: UsageTimeFormat) -> String {
+    static func spoken(_ window: UsageWindow, provider: UsageProvider, now: Date, format: UsageTimeFormat) -> String {
         let label = window.label.replacingOccurrences(of: " · ", with: ", ")
         let name = label.prefix(1).lowercased() + label.dropFirst()
         if window.isExpired(at: now) {

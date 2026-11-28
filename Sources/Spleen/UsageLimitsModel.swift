@@ -3,10 +3,37 @@ import SpleenCore
 
 typealias UsageFetch = (UsageFetchRequest) -> Void
 
-/// Codex and Claude subscription limits for the Usage Limits view. Main thread only.
+/// Usage providers can report quotas without supporting conversation navigation.
+enum UsageProvider: String, CaseIterable {
+    case codex, claude, antigravity
+
+    var displayName: String {
+        switch self {
+        case .codex: return ContextProvider.codex.displayName
+        case .claude: return ContextProvider.claude.displayName
+        case .antigravity: return "Antigravity"
+        }
+    }
+
+    var clientName: String { self == .claude ? "Claude Code" : displayName }
+
+    var detailsLabel: String {
+        self == .antigravity ? "Antigravity quota guide" : "\(displayName) usage page"
+    }
+
+    var detailsURL: URL {
+        switch self {
+        case .codex: return URL(string: "https://chatgpt.com/codex/settings/usage")!
+        case .claude: return URL(string: "https://claude.ai/settings/usage")!
+        case .antigravity: return URL(string: "https://antigravity.google/docs/cli/commands/usage")!
+        }
+    }
+}
+
+/// Subscription limits for the Usage Limits view. Main thread only.
 ///
 /// Unless trend tracking is on, nothing runs while the view is closed: no timer, no wake
-/// observer, no helper. Each opening refreshes both providers independently, and readings stay
+/// observer, no helper. Each opening refreshes providers independently, and readings stay
 /// in memory only. Trend tracking is opt-in: it adds one quiet read per provider every five
 /// minutes while the view is closed, and keeps percentages and their times in one private file.
 final class UsageLimitsModel: ObservableObject {
@@ -29,17 +56,13 @@ final class UsageLimitsModel: ObservableObject {
         case lastKnown(Date, UsageFailure)
     }
 
-    static let providers: [ContextProvider] = [.codex, .claude]
-    static let usagePages: [ContextProvider: URL] = [.codex: URL(string: "https://chatgpt.com/codex/settings/usage")!,
-                                                     .claude: URL(string: "https://claude.ai/settings/usage")!]
-
-    @Published private(set) var codex = ProviderState()
-    @Published private(set) var claude = ProviderState()
+    @Published private var states: [UsageProvider: ProviderState] = [:]
+    let providers: [UsageProvider]
     /// The instant expiry is judged against. It moves on open, arrival, the reset timer and wake.
     @Published private(set) var now: Date
     private(set) var isOpen = false
     private(set) var openingID = 0
-    private(set) var fetchCounts: [ContextProvider: Int] = [.codex: 0, .claude: 0]
+    private(set) var fetchCounts: [UsageProvider: Int] = [:]
     private(set) var timerTarget: Date?
     /// When the current opening began; a row whose reading is newer is a fresh row.
     private(set) var openedAt: Date?
@@ -48,30 +71,29 @@ final class UsageLimitsModel: ObservableObject {
     /// Percent used over each window's current period. Empty unless trend tracking is on.
     @Published private(set) var history = UsageHistory()
     private(set) var tracksTrend = false
-    private(set) var sampleCounts: [ContextProvider: Int] = [.codex: 0, .claude: 0]
-    /// About 0.6 s of CPU for both providers per sample, so roughly 0.2 % of one core.
+    private(set) var sampleCounts: [UsageProvider: Int] = [:]
     static let sampleInterval: TimeInterval = 300
 
     private let clock: () -> Date
-    private let fetchers: [ContextProvider: UsageFetch]
+    private let fetchers: [UsageProvider: UsageFetch]
     private let scheduleTimer: (Date, @escaping () -> Void) -> () -> Void
     private let observeWake: (@escaping () -> Void) -> () -> Void
     private let shutdown: () -> Void
     private var cancelTimer: (() -> Void)?
     private var cancelWake: (() -> Void)?
-    private var cancellations: [ContextProvider: HelperCancellation] = [:]
+    private var cancellations: [UsageProvider: HelperCancellation] = [:]
     private let historyFile: UsageHistoryFile?
     private let scheduleSampling: (TimeInterval, @escaping () -> Void) -> () -> Void
     private let maySample: () -> Bool
     private var cancelSampling: (() -> Void)?
-    private var sampleTokens: [ContextProvider: HelperCancellation] = [:]
-    private var sampleRetryAfter: [ContextProvider: Date] = [:]
+    private var sampleTokens: [UsageProvider: HelperCancellation] = [:]
+    private var sampleRetryAfter: [UsageProvider: Date] = [:]
     private var sampleGeneration = 0
     /// Whose readings the trend holds, in memory only, so a confirmed account change starts it again.
-    private var trendOwners: [ContextProvider: UsageOwner] = [:]
+    private var trendOwners: [UsageProvider: UsageOwner] = [:]
 
     init(clock: @escaping () -> Date = Date.init,
-         fetchers: [ContextProvider: UsageFetch],
+         fetchers: [UsageProvider: UsageFetch],
          scheduleTimer: @escaping (Date, @escaping () -> Void) -> () -> Void = UsageLimitsModel.mainTimer,
          observeWake: @escaping (@escaping () -> Void) -> () -> Void = UsageLimitsModel.wakeObserver,
          shutdown: @escaping () -> Void = {},
@@ -81,15 +103,16 @@ final class UsageLimitsModel: ObservableObject {
         self.clock = clock; self.fetchers = fetchers; self.scheduleTimer = scheduleTimer
         self.observeWake = observeWake; self.shutdown = shutdown
         self.historyFile = historyFile; self.scheduleSampling = scheduleSampling; self.maySample = maySample
+        providers = UsageProvider.allCases.filter { fetchers[$0] != nil }
         now = clock()
     }
 
-    func state(_ provider: ContextProvider) -> ProviderState { provider == .codex ? codex : claude }
-    private func update(_ provider: ContextProvider, _ change: (inout ProviderState) -> Void) {
+    func state(_ provider: UsageProvider) -> ProviderState { states[provider] ?? ProviderState() }
+    private func update(_ provider: UsageProvider, _ change: (inout ProviderState) -> Void) {
         var value = state(provider)
         change(&value)
         guard value != state(provider) else { return }
-        if provider == .codex { codex = value } else { claude = value }
+        states[provider] = value
     }
 
     var hasTimer: Bool { cancelTimer != nil }
@@ -97,9 +120,9 @@ final class UsageLimitsModel: ObservableObject {
     var hasOutstandingWork: Bool { !cancellations.isEmpty }
     var isSampling: Bool { !sampleTokens.isEmpty }
     var hasSamplingTimer: Bool { cancelSampling != nil }
-    var canRefresh: Bool { isOpen && Self.providers.contains { refreshable($0) } }
+    var canRefresh: Bool { isOpen && providers.contains { refreshable($0) } }
 
-    func status(_ provider: ContextProvider) -> Status {
+    func status(_ provider: UsageProvider) -> Status {
         let value = state(provider)
         if let reading = value.reading {
             if value.inFlight { return .checking(lastKnown: reading.checkedAt) }
@@ -112,7 +135,7 @@ final class UsageLimitsModel: ObservableObject {
         return .loading
     }
 
-    /// Paints from memory at once; both providers refresh independently off the main thread.
+    /// Paints from memory at once; providers refresh independently off the main thread.
     func open() {
         guard !isOpen else { return }
         isOpen = true
@@ -120,17 +143,17 @@ final class UsageLimitsModel: ObservableObject {
         now = clock()
         openedAt = now
         cancelWake = observeWake { [weak self] in self?.reevaluate() }
-        for provider in Self.providers { refresh(provider) }
+        for provider in providers { refresh(provider) }
         armTimer()
     }
 
-    private func refreshable(_ provider: ContextProvider) -> Bool {
+    private func refreshable(_ provider: UsageProvider) -> Bool {
         let value = state(provider)
         return !value.inFlight && !(value.retryAfter.map { clock() < $0 } ?? false)
     }
 
     /// Coalesced: a no-op while that provider is in flight or backing off (manual refresh too).
-    func refresh(_ provider: ContextProvider) {
+    func refresh(_ provider: UsageProvider) {
         guard isOpen, refreshable(provider), let fetch = fetchers[provider] else { return }
         let started = clock()
         update(provider) { $0.requestID += 1; $0.inFlight = true; $0.attemptStartedAt = started }
@@ -143,16 +166,16 @@ final class UsageLimitsModel: ObservableObject {
         })
     }
 
-    func refreshAll() { for provider in Self.providers { refresh(provider) } }
+    func refreshAll() { for provider in providers { refresh(provider) } }
 
     /// Previews only: replace a provider's state with invented values.
-    func install(_ value: ProviderState, for provider: ContextProvider) {
-        if provider == .codex { codex = value } else { claude = value }
+    func install(_ value: ProviderState, for provider: UsageProvider) {
+        states[provider] = value
     }
     func install(_ value: UsageHistory) { history = value }
 
     /// Only the current request of the current opening is applied; late answers are ignored.
-    private func receive(_ event: UsageEvent, from provider: ContextProvider, opening: Int, request: Int) {
+    private func receive(_ event: UsageEvent, from provider: UsageProvider, opening: Int, request: Int) {
         guard isOpen, opening == openingID, state(provider).requestID == request, state(provider).inFlight else { return }
         switch event {
         case .identity(let observed):
@@ -189,7 +212,7 @@ final class UsageLimitsModel: ObservableObject {
 
     /// A confirmed change or sign-out drops that provider's cache at once, even if its usage
     /// read then fails. `unknown` changes nothing.
-    private func apply(_ observed: UsageIdentity, to provider: ContextProvider) {
+    private func apply(_ observed: UsageIdentity, to provider: UsageProvider) {
         guard observed != .unknown else { return }
         if observed == .signedOut
             || trendOwners[provider].map({ UsageIdentityRules.confirmsChange(cached: $0.user, observed: observed) }) ?? false {
@@ -210,7 +233,7 @@ final class UsageLimitsModel: ObservableObject {
         openingID += 1
         for token in cancellations.values { token.cancel() }
         cancellations = [:]
-        for provider in Self.providers { update(provider) { $0.inFlight = false } }
+        for provider in providers { update(provider) { $0.inFlight = false } }
         cancelTimer?(); cancelTimer = nil; timerTarget = nil
         cancelWake?(); cancelWake = nil
     }
@@ -252,7 +275,7 @@ final class UsageLimitsModel: ObservableObject {
     func sample() {
         guard tracksTrend, !isOpen, maySample() else { return }
         let started = clock(), generation = sampleGeneration
-        for provider in Self.providers {
+        for provider in providers {
             let backoff = [sampleRetryAfter[provider], state(provider).retryAfter].compactMap { $0 }.max()
             guard sampleTokens[provider] == nil, !(backoff.map { started < $0 } ?? false), let fetch = fetchers[provider] else { continue }
             let token = HelperCancellation()
@@ -266,7 +289,7 @@ final class UsageLimitsModel: ObservableObject {
         }
     }
 
-    private func receiveSample(_ event: UsageEvent, from provider: ContextProvider, started: Date, token: HelperCancellation, generation: Int) {
+    private func receiveSample(_ event: UsageEvent, from provider: UsageProvider, started: Date, token: HelperCancellation, generation: Int) {
         guard tracksTrend, generation == sampleGeneration, sampleTokens[provider] === token else { return }
         switch event {
         case .identity(let observed):
@@ -287,7 +310,7 @@ final class UsageLimitsModel: ObservableObject {
 
     /// Adds a reading to the trend. A confirmed change of person or of snapshot owner starts
     /// that provider's lines again first; an unknown owner changes nothing.
-    private func record(_ reading: UsageReading, from provider: ContextProvider) {
+    private func record(_ reading: UsageReading, from provider: UsageProvider) {
         guard tracksTrend else { return }
         var next = history
         var owner = reading.owner
@@ -307,7 +330,7 @@ final class UsageLimitsModel: ObservableObject {
         historyFile?.save(next)
     }
 
-    private func forgetTrend(_ provider: ContextProvider) {
+    private func forgetTrend(_ provider: UsageProvider) {
         trendOwners[provider] = nil
         var next = history
         guard next.remove(prefix: provider.rawValue + ".") else { return }
@@ -323,7 +346,7 @@ final class UsageLimitsModel: ObservableObject {
         cancelTimer?(); cancelTimer = nil; timerTarget = nil
         guard isOpen else { return }
         let instant = clock()
-        let next = Self.providers.compactMap { state($0).reading }.flatMap(\.windows).compactMap(\.resetsAt)
+        let next = providers.compactMap { state($0).reading }.flatMap(\.windows).compactMap(\.resetsAt)
             .compactMap { UsageTimeFormat.nextChange(for: $0, after: instant) }.min()
         guard let next else { return }
         timerTarget = next
@@ -362,6 +385,7 @@ extension UsageLimitsModel {
     /// The installed clients, each on its own lane: one live helper and one pending launch per provider.
     static func live(historyURL: URL? = nil) -> UsageLimitsModel {
         let codexLane = HelperLane(label: "spleen.usage.codex"), claudeLane = HelperLane(label: "spleen.usage.claude")
+        let agyLane = HelperLane(label: "spleen.usage.antigravity")
         let gate = ClaudeUsageGate()
         let environment = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -374,10 +398,16 @@ extension UsageLimitsModel {
                 ClaudeUsage.fetch(executable: { ClaudeUsage.resolveExecutable(home: home, path: environment["PATH"]) },
                                   workingDirectory: neutralHelperDirectory, environment: environment,
                                   lane: claudeLane, gate: gate, request: request)
+            },
+            .antigravity: { request in
+                AntigravityUsage.fetch(executable: { AntigravityUsage.resolveExecutable(home: home, path: environment["PATH"]) },
+                                       workingDirectory: neutralHelperDirectory, environment: environment,
+                                       lane: agyLane, request: request)
             }
         ], shutdown: {
-            codexLane.cancelAll(); claudeLane.cancelAll()
-            codexLane.waitUntilIdle(timeout: 1.5); claudeLane.waitUntilIdle(timeout: 1.5)
+            let lanes = [codexLane, claudeLane, agyLane]
+            for lane in lanes { lane.cancelAll() }
+            for lane in lanes { lane.waitUntilIdle(timeout: 1.5) }
         }, historyFile: historyURL.map(UsageHistoryFile.at))
     }
 

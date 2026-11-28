@@ -30,24 +30,12 @@ public enum ClaudeUsage {
     /// Native installer, older local install, the app's own PATH, then Homebrew and /usr/local.
     /// No login shell is run.
     public static func candidates(home: URL, path: String?) -> [String] {
-        var list = [home.appendingPathComponent(".local/bin/claude").path, home.appendingPathComponent(".claude/local/claude").path]
-        for directory in (path ?? "").split(separator: ":") where directory.hasPrefix("/") {
-            list.append(URL(fileURLWithPath: String(directory)).appendingPathComponent("claude").path)
-        }
-        list += ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
-        var seen = Set<String>()
-        return list.filter { seen.insert($0).inserted }
+        UsageExecutable.candidates("claude", local: [home.appendingPathComponent(".local/bin/claude").path,
+                                                    home.appendingPathComponent(".claude/local/claude").path], path: path)
     }
 
-    /// The first candidate that is an executable regular file after resolving symlinks.
     public static func resolveExecutable(home: URL, path: String?) -> URL? {
-        for candidate in candidates(home: home, path: path) {
-            let resolved = URL(fileURLWithPath: candidate).resolvingSymlinksInPath().path
-            guard let type = try? FileManager.default.attributesOfItem(atPath: resolved)[.type] as? FileAttributeType,
-                  type == .typeRegular, FileManager.default.isExecutableFile(atPath: resolved) else { continue }
-            return URL(fileURLWithPath: candidate)
-        }
-        return nil
+        UsageExecutable.resolve(candidates(home: home, path: path))
     }
 
     /// Spleen's environment unchanged, except that PATH also holds the executable's own

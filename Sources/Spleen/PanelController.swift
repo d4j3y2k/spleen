@@ -219,14 +219,22 @@ final class PanelController: NSObject, NSWindowDelegate {
         // Option event and let the native field/input method compose it on replay.
         return event.modifierFlags.contains(.option) && printable(event.charactersIgnoringModifiers ?? "")
     }
-    private func resize(for mode: AppModel.Mode) {
+    private func resize(for mode: AppModel.Mode, on screen: NSScreen? = nil) {
         // Every surface draws its own shadow on Liquid Glass; older systems keep the window shadow.
         panel.hasShadow = mode != .compass && !SpleenStyle.usesGlass
-        let size = mode == .compass ? CompassLayout.size : SpleenStyle.managementSize
+        let frame = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame
+        var size = mode == .compass ? CompassLayout.size : SpleenStyle.managementSize
+        if mode == .usage {
+            size = SpleenStyle.usageSize
+            if let frame {
+                size.width = min(size.width, frame.width)
+                size.height = min(size.height, frame.height)
+            }
+        }
         guard panel.frame.size != size else { return }
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
         var origin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
-        if let frame = (panel.screen ?? NSScreen.main)?.visibleFrame { origin = Self.clamp(origin, size: size, in: frame) }
+        if let frame { origin = Self.clamp(origin, size: size, in: frame) }
         panel.setFrame(NSRect(origin: origin, size: size), display: session.isPresented, animate: false)
     }
     /// Keeps the panel inside the screen's visible frame. A panel larger than the screen
@@ -339,8 +347,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
             .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
-    func openUsagePage(_ provider: ContextProvider) {
-        guard session.isPresented, let target = UsageLimitsModel.usagePages[provider] else { return }
+    func openUsagePage(_ provider: UsageProvider) {
+        guard session.isPresented else { return }
+        let target = provider.detailsURL
         let priorPID = session.priorPID
         dismiss(.dispatch, endingPresentation: false)
         if dispatchURL(target) {
@@ -348,7 +357,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             model.endPresentation()
         } else {
             trace("usage.page.rejected")
-            model.reportTransientError("Couldn’t open the \(provider.displayName) usage page. Check your default browser, then try again.")
+            model.reportTransientError("Couldn’t open the \(provider.detailsLabel). Check your default browser, then try again.")
             present(reset: false)
             session.present(priorPID: priorPID)
             model.resumeUsage()
@@ -375,9 +384,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         restorationTraceGeneration &+= 1
         if reset { model.prepare(assessOnOpen: assessOnOpen, searchQuery: searchQuery) }
-        resize(for: model.mode)
-        session.present(priorPID: currentPID())
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        resize(for: model.mode, on: screen)
+        session.present(priorPID: currentPID())
         if let frame = screen?.visibleFrame {
             panel.setFrameOrigin(Self.clamp(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2 + 50),
                                             size: panel.frame.size, in: frame))

@@ -56,7 +56,7 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             timing: TurnTiming(lastCompletedAt: instant.addingTimeInterval(-300), checkedAt: instant))]
     try notes.save(to: fixture.appendingPathComponent("relevance.json"))
     // Usage reads never run in a preview; each scenario installs invented readings.
-    let previewUsage = UsageLimitsModel(clock: { instant }, fetchers: [.codex: { _ in }, .claude: { _ in }],
+    let previewUsage = UsageLimitsModel(clock: { instant }, fetchers: [.codex: { _ in }, .claude: { _ in }, .antigravity: { _ in }],
                                         scheduleTimer: { _, _ in {} }, observeWake: { _ in {} })
     let populatedModel = AppModel(repository: repository, catalogFetcher: { _ in ([], false) }, insightFetcher: { _, _ in [] }, now: { instant },
                                   usage: previewUsage)
@@ -87,7 +87,7 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             ("search", .search, nil), ("search-empty", .search, nil),
             ("settings", .settings, nil), ("editor", .editor, nil),
             ("usage", .usage, nil), ("usage-loading", .usage, nil), ("usage-many", .usage, nil),
-            ("usage-many-end", .usage, nil), ("usage-expired", .usage, nil)
+            ("usage-many-trends", .usage, nil), ("usage-expired", .usage, nil)
         ]
         for (name, mode, selectedThread) in scenarios {
             let model = name == "compass-empty" ? emptyModel : populatedModel
@@ -106,12 +106,12 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
                 size = SpleenStyle.managementSize
                 model.edit(state.destinations[5])
             case .usage:
-                size = SpleenStyle.managementSize
+                size = SpleenStyle.usageSize
                 model.showUsage()
                 let states = previewUsageStates(name, now: instant)
-                previewUsage.install(states.codex, for: .codex)
-                previewUsage.install(states.claude, for: .claude)
-                previewUsage.install(name == "usage" ? previewUsageHistory([states.codex, states.claude], now: instant) : UsageHistory())
+                for (provider, state) in states { previewUsage.install(state, for: provider) }
+                previewUsage.install(["usage", "usage-many-trends"].contains(name)
+                    ? previewUsageHistory(Array(states.values), now: instant) : UsageHistory())
             }
             let canvasSize = NSSize(width: size.width + 48, height: size.height + 48)
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: canvasSize),
@@ -124,8 +124,7 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
             let canvas = NativePreviewBacking(frame: NSRect(origin: .zero, size: canvasSize))
             canvas.dark = appearanceName == "dark"
             // Liquid Glass is composited by the window server, so snapshots use the material fallback.
-            let hosting = NSHostingView(rootView: SwitcherView(model: model).environment(\.spleenSnapshot, true)
-                .environment(\.usageScrollAnchorBottom, name == "usage-many-end"))
+            let hosting = NSHostingView(rootView: SwitcherView(model: model).environment(\.spleenSnapshot, true))
             hosting.sizingOptions = []
             hosting.frame = NSRect(x: 24, y: 24, width: size.width, height: size.height)
             canvas.addSubview(hosting)
@@ -157,7 +156,7 @@ func renderNativePreviews(directory: URL) throws -> [URL] {
 }
 
 /// Invented readings for the Usage Limits previews; no real account data.
-private func previewUsageStates(_ name: String, now: Date) -> (codex: UsageLimitsModel.ProviderState, claude: UsageLimitsModel.ProviderState) {
+func previewUsageStates(_ name: String, now: Date) -> [UsageProvider: UsageLimitsModel.ProviderState] {
     typealias State = UsageLimitsModel.ProviderState
     let owner = UsageOwner(user: .unknown)
     let checked = now.addingTimeInterval(-40)
@@ -169,24 +168,31 @@ private func previewUsageStates(_ name: String, now: Date) -> (codex: UsageLimit
     let codexWindows = [window("c5", "5-hour limit", used: 16, hours: 3.5), window("cw", "Weekly limit", used: 42, hours: 70)]
     let claudeWindows = [window("a5", "5-hour limit", used: 0, hours: nil), window("aw", "Weekly limit", used: 37, hours: 50),
                          window("am", "Weekly limit · Fixture", used: 100, hours: 50)]
+    let agyWindows = [window("gw", "Weekly limit · Gemini Models", used: 18, hours: 105),
+                      window("g5", "5-hour limit · Gemini Models", used: 32, hours: 3),
+                      window("pw", "Weekly limit · Claude and GPT models", used: 10, hours: 81),
+                      window("p5", "5-hour limit · Claude and GPT models", used: 0, hours: nil)]
+    var states: [UsageProvider: State] = [.codex: State(reading: reading(codexWindows)),
+                                          .claude: State(reading: reading(claudeWindows)),
+                                          .antigravity: State(reading: reading(agyWindows))]
     switch name {
     case "usage-loading":
-        return (State(inFlight: true, requestID: 1),
-                State(reading: reading(claudeWindows), inFlight: true, requestID: 2))
-    case "usage-many", "usage-many-end":
+        states[.codex] = State(inFlight: true)
+        states[.claude]?.inFlight = true
+    case "usage-many", "usage-many-trends":
         let many = (1...6).map { window("cm\($0)", "Fixture bucket \($0) · Weekly limit", used: Double($0 * 13), hours: Double($0) * 20) }
-        return (State(reading: reading(codexWindows + many), requestID: 1),
-                State(reading: reading(claudeWindows + [window("ao", "Weekly limit · connected apps", used: 5, hours: 160)]), requestID: 1))
+        states[.codex] = State(reading: reading(codexWindows + many))
+        states[.claude] = State(reading: reading(claudeWindows + [window("ao", "Weekly limit · connected apps", used: 5, hours: 160)]))
     case "usage-expired":
-        return (State(reading: reading([window("c5", "5-hour limit", used: 64, hours: -0.2), codexWindows[1]]), requestID: 1),
-                State(requestID: 1, lastAttemptAt: checked, lastFailure: .signedOut))
-    default:
-        return (State(reading: reading(codexWindows), requestID: 1), State(reading: reading(claudeWindows), requestID: 1))
+        states[.codex] = State(reading: reading([window("c5", "5-hour limit", used: 64, hours: -0.2), codexWindows[1]]))
+        states[.claude] = State(lastAttemptAt: checked, lastFailure: .signedOut)
+    default: break
     }
+    return states
 }
 
 /// An invented burn for each previewed window with a reset: slow at first, then busier.
-private func previewUsageHistory(_ states: [UsageLimitsModel.ProviderState], now: Date) -> UsageHistory {
+func previewUsageHistory(_ states: [UsageLimitsModel.ProviderState], now: Date) -> UsageHistory {
     var history = UsageHistory()
     for window in states.compactMap(\.reading).flatMap(\.windows) {
         guard let reset = window.resetsAt, let minutes = window.durationMinutes, !window.isExpired(at: now) else { continue }

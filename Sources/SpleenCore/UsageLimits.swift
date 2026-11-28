@@ -215,3 +215,26 @@ public enum UsageTimestamp {
         return nil
     }
 }
+
+/// Locate installed clients for a menu-bar app, whose PATH may lack the shell's additions.
+enum UsageExecutable {
+    static func candidates(_ name: String, local: [String], path: String?) -> [String] {
+        var list = local
+        for directory in (path ?? "").split(separator: ":") where directory.hasPrefix("/") {
+            list.append(URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path)
+        }
+        list += ["/opt/homebrew/bin/" + name, "/usr/local/bin/" + name]
+        var seen = Set<String>()
+        return list.filter { seen.insert($0).inserted }
+    }
+
+    static func resolve(_ candidates: [String]) -> URL? {
+        for candidate in candidates {
+            let resolved = URL(fileURLWithPath: candidate).resolvingSymlinksInPath().path
+            guard let type = try? FileManager.default.attributesOfItem(atPath: resolved)[.type] as? FileAttributeType,
+                  type == .typeRegular, FileManager.default.isExecutableFile(atPath: resolved) else { continue }
+            return URL(fileURLWithPath: candidate)
+        }
+        return nil
+    }
+}

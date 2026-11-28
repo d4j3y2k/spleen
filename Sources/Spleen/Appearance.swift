@@ -3,6 +3,7 @@ import SwiftUI
 import SpleenCore
 
 enum SpleenStyle {
+    static let usageSize = NSSize(width: 1080, height: 604)
     static let managementSize = NSSize(width: 680, height: 584)
     static let accent = adaptive(light: 0xA43F59, dark: 0xE7A0AE)
     static let blush = adaptive(light: 0xDB8798, dark: 0xB75C74)
